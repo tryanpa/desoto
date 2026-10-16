@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Desoto Kiosk</title>
+<style>
+ body{margin:0;font-family:system-ui,sans-serif;background:#f4f6f8;padding:16px}
+ h1{margin:0 0 8px}#status{margin-bottom:12px;font-size:1.2em}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+ button{font-size:1.1em;padding:18px 8px;border:0;border-radius:10px;background:#2563eb;color:#fff}
+ .q button{background:#64748b}.q{margin-bottom:16px}
+ .sim{margin-top:24px;font-size:.8em;opacity:.7}.sim button{padding:8px;font-size:1em;background:#999}
+</style>
+<h1>Bathroom pass</h1><div id="status"></div>
+<div class="q"><b>Queue (tap to leave):</b> <span id="queue"></span></div>
+<b>Tap your name:</b><div class="grid" id="roster"></div>
+<div class="sim">Simulator: <button onclick="sim(false)">Take pass</button> <button onclick="sim(true)">Return pass</button></div>
+<script src="common.js"></script>
+<script>
+const post = (u, b, m="POST") => fetch(u, {method:m, headers:{"Content-Type":"application/json"}, body:b && JSON.stringify(b)});
+const sim = d => post("/api/sim/docked", {docked: d});
+let last = "";
+connect((s, left) => {
+  document.getElementById("status").textContent = s.out
+    ? `${s.out.student} is out (${fmt(left)})` : "Pass is available";
+  const key = JSON.stringify([s.queue, s.roster]);
+  if (key === last) return; last = key;
+  const mk = (list, fn) => { const f = document.createDocumentFragment();
+    list.forEach((n, i) => { const b = document.createElement("button"); b.textContent = fn(n, i); b.onclick = () => click(n); f.append(b); }); return f; };
+  const click = n => s.queue.includes(n) ? post("/api/queue/" + encodeURIComponent(n), null, "DELETE") : post("/api/queue", {student: n});
+  document.getElementById("queue").replaceChildren(...mk(s.queue, (n, i) => `${i + 1}. ${n}`).children);
+  document.getElementById("roster").replaceChildren(...mk(s.roster, n => n).children);
+});
+</script>

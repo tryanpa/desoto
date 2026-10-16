@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Desoto Display</title>
+<style>
+ body{margin:0;background:#101418;color:#eee;font-family:system-ui,sans-serif;text-align:center;height:100vh;display:flex;flex-direction:column;justify-content:space-around}
+ .label{font-size:3vw;opacity:.6;text-transform:uppercase;letter-spacing:.2em}
+ .name{font-size:8vw;font-weight:700}
+ .clock{font-size:20vw;font-weight:800;font-variant-numeric:tabular-nums}
+ .over{color:#ff4d4d;animation:b 1s infinite}@keyframes b{50%{opacity:.4}}
+ .free{color:#4ade80}
+</style>
+<div><div class="label" id="oLabel">Pass</div><div class="name" id="out"></div><div class="clock" id="clock"></div></div>
+<div><div class="label">Next up</div><div class="name" id="next"></div></div>
+<script src="common.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+connect((s, left) => {
+  $("next").textContent = s.queue[0] || "—";
+  if (s.out) {
+    $("oLabel").textContent = "Out now"; $("out").textContent = s.out.student;
+    $("clock").textContent = fmt(left); $("clock").className = "clock" + (left < 0 ? " over" : "");
+  } else {
+    $("oLabel").textContent = "Pass"; $("out").textContent = "Available";
+    $("clock").textContent = "✓"; $("clock").className = "clock free";
+  }
+});
+</script>
