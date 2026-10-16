@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).parent / "static"
 
 
-def create_app(state: PassState | None = None) -> FastAPI:
+def create_app(state: Optional[PassState] = None) -> FastAPI:
     if state is None:
         roster = json.loads(Path(os.environ.get("DESOTO_ROSTER", ROOT / "roster.json")).read_text())
         state = PassState(roster, int(os.environ.get("DESOTO_SECONDS", DEFAULT_DURATION)))
