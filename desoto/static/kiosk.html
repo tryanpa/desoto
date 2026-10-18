@@ -11,9 +11,6 @@
  .compact .tile{min-width:0;padding:12px 8px;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .compact h1{font-size:clamp(1.5rem,3vw,2.4rem)}.compact .sub{display:none}
  .head{display:flex;align-items:center;gap:24px}
- .strip{display:flex;gap:8px;max-width:100%;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;scrollbar-color:#444 transparent}
- .strip::-webkit-scrollbar{height:6px}.strip::-webkit-scrollbar-thumb{background:#444;border-radius:3px}
- .strip .tile{flex:none;padding:10px 14px;font-size:.85rem}
  @media (max-height:700px){.compact .tile{padding:8px 6px;font-size:.85rem}.tile.period{padding:20px 16px}}
  .tile:active{transform:scale(.97)}
  .box{display:flex;flex-direction:column;align-items:center;gap:10px}
@@ -26,7 +23,6 @@
  <div class="head"><button class="ghost" id="back" hidden onclick="show(null)">← Periods</button>
   <div><h1 id="h1"></h1><div class="sub" id="sub"></div></div></div>
  <div class="box" style="width:100%"><div class="grid" id="main"></div></div>
- <div class="box" style="max-width:100%"><div class="label" id="qLabel">Queue — tap to leave</div><div class="strip" id="queue"></div></div>
 </main>
 <div class="footer"><span id="status">Waiting</span>
  <span class="sim"><span class="label">Simulator</span>
@@ -48,10 +44,15 @@ function show(p) {
   if (p) idle = setTimeout(() => show(null), 20000);
   render();
 }
+let flash = "", flashTimer = null;
+function say(msg) { flash = msg; clearTimeout(flashTimer); flashTimer = setTimeout(() => flash = "", 4000); }
 function join(p, n) {
-  post("/api/queue", {period: p, student: n}).then(() => show(null));
+  post("/api/queue", {period: p, student: n}).then(r => r.json()).then(st => {
+    say(`${n} added — #${st.queue.findIndex(q => same(p, n, q)) + 1} in line`); show(null); });
 }
-function leave(p, n) { post("/api/queue/" + encodeURIComponent(p) + "/" + encodeURIComponent(n), null, "DELETE"); }
+function leave(p, n) {
+  post("/api/queue/" + encodeURIComponent(p) + "/" + encodeURIComponent(n), null, "DELETE").then(() => { say(`${n} removed from line`); show(null); });
+}
 
 function render() {
   if (!S) return;
@@ -60,7 +61,6 @@ function render() {
   $("back").hidden = !period;
   document.body.classList.toggle("compact", !!period);
   $("main").className = "grid" + (period ? " names" : "");
-  $("qLabel").textContent = "Queue" + (S.queue.length ? ` (${S.queue.length})` : "") + " — tap to leave";
   if (!period) {
     $("h1").replaceChildren("Tap Your", document.createElement("br"), Object.assign(el("span", "green", "Class Period")));
     $("sub").textContent = "Then tap your name";
@@ -70,18 +70,15 @@ function render() {
     $("h1").replaceChildren("Period " + period + " — ", el("span", "green", "Tap Your Name"));
     $("main").replaceChildren(...S.roster[period].map(n => {
       if (same(period, n, S.out)) return el("button", "tile out", n + " · OUT");
-      const queued = S.queue.some(q => same(period, n, q));
-      const b = el("button", "tile" + (queued ? " queued" : ""), n);
+      const pos = S.queue.findIndex(q => same(period, n, q)) + 1, queued = pos > 0;
+      const b = el("button", "tile" + (queued ? " queued" : ""), queued ? `#${pos} · ${n}` : n);
       b.onclick = () => queued ? leave(period, n) : join(period, n); return b; }));
   }
-  $("queue").replaceChildren(...(S.queue.length ? S.queue.map((q, i) => {
-    const b = el("button", "tile queued", `${i + 1}. ${q.student} · P${q.period}`); b.onclick = () => leave(q.period, q.student); return b; })
-    : [el("div", "sub", "Nobody waiting")]));
 }
 if (location.hash.length > 1) show(decodeURIComponent(location.hash.slice(1)));  // e.g. /#3 opens period 3
 connect((s, left) => {
   S = s; setPill(s);
-  $("status").textContent = s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
+  $("status").textContent = flash ? flash : s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
   render();
 });
 </script>
