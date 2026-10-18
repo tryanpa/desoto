@@ -1,31 +1,50 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Desoto Kiosk</title>
+<link rel="stylesheet" href="theme.css">
 <style>
- body{margin:0;font-family:system-ui,sans-serif;background:#f4f6f8;padding:16px}
- h1{margin:0 0 8px}#status{margin-bottom:12px;font-size:1.2em}
- .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
- button{font-size:1.1em;padding:18px 8px;border:0;border-radius:10px;background:#2563eb;color:#fff}
- .q button{background:#64748b}.q{margin-bottom:16px}
- .sim{margin-top:24px;font-size:.8em;opacity:.7}.sim button{padding:8px;font-size:1em;background:#999}
+ h1{margin:0;text-align:center;font-weight:900;font-size:clamp(2.4rem,6vw,4.6rem);line-height:1.05}
+ .sub{color:var(--muted);font-weight:700;letter-spacing:.04em;margin-top:12px;text-align:center}
+ .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:1100px}
+ .tile{min-width:150px;padding:18px 16px;font-size:.95rem}
+ .tile:active{transform:scale(.97)}
+ .queuebox{display:flex;flex-direction:column;align-items:center;gap:10px}
+ .sim{display:flex;align-items:center;gap:10px}
+ .sim .label{color:#444}
 </style>
-<h1>Bathroom pass</h1><div id="status"></div>
-<div class="q"><b>Queue (tap to leave):</b> <span id="queue"></span></div>
-<b>Tap your name:</b><div class="grid" id="roster"></div>
-<div class="sim">Simulator: <button onclick="sim(false)">Take pass</button> <button onclick="sim(true)">Return pass</button></div>
+<div class="topbar"><div class="brand">Desoto<i>—</i>Kiosk</div><div class="clock" id="clock"></div>
+ <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
+<main>
+ <div><h1>Tap Your<br><span class="green">Name</span></h1>
+ <div class="sub" id="sub">Join the line for the bathroom pass</div></div>
+ <div class="queuebox"><div class="label">Queue — tap to leave</div><div class="grid" id="queue"></div></div>
+ <div class="queuebox"><div class="label">Class roster</div><div class="grid" id="roster"></div></div>
+</main>
+<div class="footer"><span id="status">Waiting</span>
+ <span class="sim"><span class="label">Simulator</span>
+ <button class="ghost" onclick="sim(false)">Take pass</button><button class="ghost" onclick="sim(true)">Return pass</button></span></div>
 <script src="common.js"></script>
 <script>
-const post = (u, b, m="POST") => fetch(u, {method:m, headers:{"Content-Type":"application/json"}, body:b && JSON.stringify(b)});
+const post = (u, b, m = "POST") => fetch(u, {method: m, headers: {"Content-Type": "application/json"}, body: b && JSON.stringify(b)});
 const sim = d => post("/api/sim/docked", {docked: d});
+startClock($("clock"));
 let last = "";
+function tile(text, cls, name, s) {
+  const b = document.createElement("button");
+  b.className = "tile " + cls; b.textContent = text;
+  if (cls !== "out") b.onclick = () => s.queue.includes(name)
+    ? post("/api/queue/" + encodeURIComponent(name), null, "DELETE") : post("/api/queue", {student: name});
+  return b;
+}
 connect((s, left) => {
-  document.getElementById("status").textContent = s.out
-    ? `${s.out.student} is out (${fmt(left)})` : "Pass is available";
-  const key = JSON.stringify([s.queue, s.roster]);
+  setPill(s);
+  $("status").textContent = s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
+  const key = JSON.stringify([s.queue, s.out, s.everyone]);
   if (key === last) return; last = key;
-  const mk = (list, fn) => { const f = document.createDocumentFragment();
-    list.forEach((n, i) => { const b = document.createElement("button"); b.textContent = fn(n, i); b.onclick = () => click(n); f.append(b); }); return f; };
-  const click = n => s.queue.includes(n) ? post("/api/queue/" + encodeURIComponent(n), null, "DELETE") : post("/api/queue", {student: n});
-  document.getElementById("queue").replaceChildren(...mk(s.queue, (n, i) => `${i + 1}. ${n}`).children);
-  document.getElementById("roster").replaceChildren(...mk(s.roster, n => n).children);
+  $("queue").replaceChildren(...(s.queue.length
+    ? s.queue.map((n, i) => tile(`${i + 1}. ${n}`, "queued", n, s))
+    : [Object.assign(document.createElement("div"), {className: "sub", textContent: "Nobody waiting"})]));
+  $("roster").replaceChildren(...s.everyone.map(n =>
+    s.out && s.out.student === n ? tile(n + " · OUT", "out", n, s)
+    : s.queue.includes(n) ? tile(n, "queued", n, s) : tile(n, "", n, s)));
 });
 </script>

@@ -1,0 +1,27 @@
+/* Shared design language: dark panels, green accent, heavy caps labels, mono numerals. */
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800;900&display=swap");
+:root{
+ --bg:#1a1a1a;--panel:#222;--panel2:#2a2a2a;--border:#333;--text:#f0f0f0;--muted:#777;
+ --green:#22b05a;--green-bg:#1c2e24;--red:#c0392b;--red-bg:#3a2220;--amber:#d4860f;--amber-bg:#3a2f1a;--blue:#4a9fe0;
+ --head:"Montserrat",system-ui,-apple-system,"Segoe UI",sans-serif;
+ --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--head);display:flex;flex-direction:column}
+.topbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 36px;height:76px;background:var(--panel);border-bottom:1px solid var(--border)}
+.brand{font-weight:900;letter-spacing:.18em;font-size:1.05rem;text-transform:uppercase}
+.brand i{font-style:normal;color:var(--green);margin:0 .4em}
+.clock{font-family:var(--mono);font-size:1.7rem;letter-spacing:.08em}
+.pill{justify-self:end;display:flex;align-items:center;gap:10px;padding:8px 18px;border:1px solid var(--border);border-radius:999px;background:var(--bg);font-weight:700;font-size:.9rem}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--green)}
+.pill.out .dot{background:var(--red)}
+main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 36px;gap:28px;min-height:0}
+.footer{height:68px;display:flex;align-items:center;justify-content:center;gap:24px;background:var(--panel);border-top:1px solid var(--border);color:var(--muted);font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.9rem}
+.label{font-size:.8rem;font-weight:800;letter-spacing:.25em;text-transform:uppercase;color:#555}
+.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}
+.tile{font-family:var(--mono);font-weight:700;border-radius:10px;border:1px solid transparent;background:var(--green-bg);color:var(--green);cursor:pointer}
+.tile.queued{background:var(--amber-bg);color:var(--amber)}
+.tile.out{background:var(--red-bg);color:var(--red);cursor:default}
+.ghost{font:800 .75rem var(--head);letter-spacing:.14em;text-transform:uppercase;color:var(--text);background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px 16px;cursor:pointer}
+.ghost:hover{border-color:var(--green)}

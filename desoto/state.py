@@ -62,6 +62,7 @@ class PassState:
             "out": ({"student": self.out.student, "started_at": self.out.started_at}
                     if self.out else None),
             "queue": list(self.queue),
+            "everyone": list(self.roster),
             "roster": [s for s in self.roster
                        if s not in self.queue
                        and not (self.out and self.out.student == s)],

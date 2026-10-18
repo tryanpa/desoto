@@ -1,26 +1,45 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Desoto Display</title>
+<link rel="stylesheet" href="theme.css">
 <style>
- body{margin:0;background:#101418;color:#eee;font-family:system-ui,sans-serif;text-align:center;height:100vh;display:flex;flex-direction:column;justify-content:space-around}
- .label{font-size:3vw;opacity:.6;text-transform:uppercase;letter-spacing:.2em}
- .name{font-size:8vw;font-weight:700}
- .clock{font-size:20vw;font-weight:800;font-variant-numeric:tabular-nums}
- .over{color:#ff4d4d;animation:b 1s infinite}@keyframes b{50%{opacity:.4}}
- .free{color:#4ade80}
+ main{gap:36px;text-align:center}
+ .who{font-weight:900;font-size:clamp(2.6rem,7vw,6rem);margin-top:8px}
+ .count{font-family:var(--mono);font-weight:700;font-size:clamp(6rem,22vw,18rem);line-height:1;letter-spacing:.04em}
+ .over{animation:blink 1s infinite}@keyframes blink{50%{opacity:.35}}
+ .bar{width:min(900px,80vw);height:10px;background:var(--panel2);border-radius:6px;overflow:hidden;margin:0 auto}
+ .bar>div{height:100%;background:var(--green);transition:width .25s linear}
+ .next{display:flex;flex-direction:column;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:24px 56px;min-width:min(700px,90vw)}
+ .next .name{font-weight:900;font-size:clamp(1.8rem,4.5vw,3.4rem)}
+ .more{font-family:var(--mono);color:var(--muted);font-size:1.1rem}
 </style>
-<div><div class="label" id="oLabel">Pass</div><div class="name" id="out"></div><div class="clock" id="clock"></div></div>
-<div><div class="label">Next up</div><div class="name" id="next"></div></div>
+<div class="topbar"><div class="brand">Desoto<i>—</i>Display</div><div class="clock" id="clock"></div>
+ <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
+<main>
+ <div><div class="label" id="oLabel">Pass</div><div class="who" id="out"></div><div class="count" id="count"></div>
+ <div class="bar"><div id="fill"></div></div></div>
+ <div class="next"><div class="label">Next up</div><div class="name" id="next"></div><div class="more" id="more"></div></div>
+</main>
+<div class="footer" id="status">Waiting</div>
 <script src="common.js"></script>
 <script>
-const $ = id => document.getElementById(id);
+startClock($("clock"));
 connect((s, left) => {
+  setPill(s);
+  const nq = s.queue.length;
   $("next").textContent = s.queue[0] || "—";
+  $("more").textContent = nq > 1 ? `+${nq - 1} more in line` : nq ? "" : "Queue is empty";
   if (s.out) {
     $("oLabel").textContent = "Out now"; $("out").textContent = s.out.student;
-    $("clock").textContent = fmt(left); $("clock").className = "clock" + (left < 0 ? " over" : "");
+    $("count").textContent = fmt(left); $("count").className = "count " + tone(left);
+    const pct = Math.max(0, Math.min(100, left / s.duration * 100));
+    $("fill").style.width = pct + "%";
+    $("fill").style.background = left < 0 ? "var(--red)" : left < 120 ? "var(--amber)" : "var(--green)";
+    $("status").textContent = left < 0 ? `Over time — ${s.out.student}` : `${s.out.student} is out`;
   } else {
     $("oLabel").textContent = "Pass"; $("out").textContent = "Available";
-    $("clock").textContent = "✓"; $("clock").className = "clock free";
+    $("count").textContent = "✓"; $("count").className = "count green";
+    $("fill").style.width = "100%"; $("fill").style.background = "var(--green)";
+    $("status").textContent = "Waiting — pass available";
   }
 });
 </script>
