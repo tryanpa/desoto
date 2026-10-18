@@ -1,39 +1,44 @@
 """Pass state machine: a queue of students and at most one student out."""
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 DEFAULT_DURATION = 7 * 60
+
+# A student is identified by (class period, name): names can repeat across periods.
+Student = Tuple[str, str]
 
 
 @dataclass
 class Trip:
-    student: str
+    student: Student
     started_at: float
 
 
 @dataclass
 class PassState:
-    roster: list[str]
+    roster: Dict[str, List[str]]  # period -> names
     duration: int = DEFAULT_DURATION
     clock: Callable[[], float] = time.time
-    queue: list[str] = field(default_factory=list)
+    queue: List[Student] = field(default_factory=list)
     out: Optional[Trip] = None
     docked: bool = True
-    history: list[dict] = field(default_factory=list)
+    history: List[dict] = field(default_factory=list)
 
-    def join(self, student: str) -> bool:
+    def join(self, period: str, name: str) -> bool:
         """Add a rostered student to the queue unless already queued or out."""
-        if student not in self.roster or student in self.queue:
+        s = (period, name)
+        if name not in self.roster.get(period, []) or s in self.queue:
             return False
-        if self.out and self.out.student == student:
+        if self.out and self.out.student == s:
             return False
-        self.queue.append(student)
+        self.queue.append(s)
         return True
 
-    def leave(self, student: str) -> bool:
-        if student in self.queue:
-            self.queue.remove(student)
+    def leave(self, period: str, name: str) -> bool:
+        s = (period, name)
+        if s in self.queue:
+            self.queue.remove(s)
             return True
         return False
 
@@ -44,26 +49,25 @@ class PassState:
         self.docked = docked
         now = self.clock()
         if not docked:
-            who = self.queue.pop(0) if self.queue else "Unqueued"
+            who = self.queue.pop(0) if self.queue else ("", "Unqueued")
             self.out = Trip(who, now)
         elif self.out:
             self.history.append({
-                "student": self.out.student,
+                "period": self.out.student[0],
+                "student": self.out.student[1],
                 "started_at": self.out.started_at,
                 "seconds": round(now - self.out.started_at),
             })
             self.out = None
 
     def snapshot(self) -> dict:
+        person = lambda s: {"period": s[0], "student": s[1]}
         return {
             "now": self.clock(),
             "duration": self.duration,
             "docked": self.docked,
-            "out": ({"student": self.out.student, "started_at": self.out.started_at}
+            "out": (dict(person(self.out.student), started_at=self.out.started_at)
                     if self.out else None),
-            "queue": list(self.queue),
-            "everyone": list(self.roster),
-            "roster": [s for s in self.roster
-                       if s not in self.queue
-                       and not (self.out and self.out.student == s)],
+            "queue": [person(s) for s in self.queue],
+            "roster": self.roster,
         }

@@ -15,9 +15,9 @@
 <div class="topbar"><div class="brand">Desoto<i>—</i>Display</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
 <main>
- <div><div class="label" id="oLabel">Pass</div><div class="who" id="out"></div><div class="count" id="count"></div>
+ <div><div class="label" id="oLabel">Pass</div><div class="who" id="out"></div><div class="label" id="oPeriod"></div><div class="count" id="count"></div>
  <div class="bar"><div id="fill"></div></div></div>
- <div class="next"><div class="label">Next up</div><div class="name" id="next"></div><div class="more" id="more"></div></div>
+ <div class="next"><div class="label">Next up</div><div class="name" id="next"></div><div class="label" id="nPeriod"></div><div class="more" id="more"></div></div>
 </main>
 <div class="footer" id="status">Waiting</div>
 <script src="common.js"></script>
@@ -26,17 +26,19 @@ startClock($("clock"));
 connect((s, left) => {
   setPill(s);
   const nq = s.queue.length;
-  $("next").textContent = s.queue[0] || "—";
+  $("next").textContent = nq ? s.queue[0].student : "—";
+  $("nPeriod").textContent = nq && s.queue[0].period ? "Period " + s.queue[0].period : "";
   $("more").textContent = nq > 1 ? `+${nq - 1} more in line` : nq ? "" : "Queue is empty";
   if (s.out) {
     $("oLabel").textContent = "Out now"; $("out").textContent = s.out.student;
+    $("oPeriod").textContent = s.out.period ? "Period " + s.out.period : "";
     $("count").textContent = fmt(left); $("count").className = "count " + tone(left);
     const pct = Math.max(0, Math.min(100, left / s.duration * 100));
     $("fill").style.width = pct + "%";
     $("fill").style.background = left < 0 ? "var(--red)" : left < 120 ? "var(--amber)" : "var(--green)";
     $("status").textContent = left < 0 ? `Over time — ${s.out.student}` : `${s.out.student} is out`;
   } else {
-    $("oLabel").textContent = "Pass"; $("out").textContent = "Available";
+    $("oLabel").textContent = "Pass"; $("out").textContent = "Available"; $("oPeriod").textContent = "";
     $("count").textContent = "✓"; $("count").className = "count green";
     $("fill").style.width = "100%"; $("fill").style.background = "var(--green)";
     $("status").textContent = "Waiting — pass available";

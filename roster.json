@@ -1,1 +1,5 @@
-["Ava Johnson", "Ben Carter", "Chloe Nguyen", "Diego Ramirez", "Emma Wilson", "Farah Ali", "Gabe Thompson", "Hana Kim"]
+{
+  "1": ["Ava Johnson", "Ben Carter", "Chloe Nguyen", "Diego Ramirez"],
+  "2": ["Emma Wilson", "Farah Ali", "Gabe Thompson", "Hana Kim"],
+  "3": ["Ivy Brooks", "Jon Park", "Kara Singh", "Leo Martin"]
+}

@@ -1,6 +1,6 @@
 # Desoto
 
-Bathroom pass tracker. Students pick their name on a kiosk to join a queue. Lifting the
+Bathroom pass tracker. Students tap their class period, then their name, on a kiosk to join a queue. Lifting the
 physical pass off its dock (hall effect sensor) starts a 7-minute countdown for the next
 student in line; returning it stops the clock. A hallway display shows who is out, the
 countdown (turns red and counts up when over time), and who is next.
@@ -12,7 +12,7 @@ countdown (turns red and counts up when over time), and who is next.
 
 - Kiosk: `http://<host>:8000/` (includes simulator buttons for take/return pass)
 - Display: `http://<host>:8000/display.html`
-- Roster: edit `roster.json` (or `DESOTO_ROSTER=path`). Timer: `DESOTO_SECONDS` (default 420).
+- Roster: edit `roster.json` (`{"period": ["names"]}`) (or `DESOTO_ROSTER=path`). Timer: `DESOTO_SECONDS` (default 420).
 
 ## Raspberry Pi hall sensor
 

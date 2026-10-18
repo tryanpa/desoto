@@ -43,6 +43,7 @@ def create_app(state: Optional[PassState] = None) -> FastAPI:
             app.state.sensor = GpioHallSensor(int(pin), on_sensor)
 
     class Who(BaseModel):
+        period: str
         student: str
 
     class Docked(BaseModel):
@@ -54,14 +55,14 @@ def create_app(state: Optional[PassState] = None) -> FastAPI:
 
     @app.post("/api/queue")
     async def join(who: Who):
-        if not state.join(who.student):
+        if not state.join(who.period, who.student):
             raise HTTPException(409, "Not on roster, already queued, or already out")
         await broadcast()
         return state.snapshot()
 
-    @app.delete("/api/queue/{student}")
-    async def leave(student: str):
-        if not state.leave(student):
+    @app.delete("/api/queue/{period}/{student}")
+    async def leave(period: str, student: str):
+        if not state.leave(period, student):
             raise HTTPException(404, "Not in queue")
         await broadcast()
         return state.snapshot()

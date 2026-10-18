@@ -6,18 +6,19 @@
  .sub{color:var(--muted);font-weight:700;letter-spacing:.04em;margin-top:12px;text-align:center}
  .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:1100px}
  .tile{min-width:150px;padding:18px 16px;font-size:.95rem}
+ .tile.period{min-width:170px;padding:34px 20px;font-size:1.5rem}
  .tile:active{transform:scale(.97)}
- .queuebox{display:flex;flex-direction:column;align-items:center;gap:10px}
+ .box{display:flex;flex-direction:column;align-items:center;gap:10px}
  .sim{display:flex;align-items:center;gap:10px}
  .sim .label{color:#444}
+ .back{margin-top:4px}
 </style>
 <div class="topbar"><div class="brand">Desoto<i>—</i>Kiosk</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
 <main>
- <div><h1>Tap Your<br><span class="green">Name</span></h1>
- <div class="sub" id="sub">Join the line for the bathroom pass</div></div>
- <div class="queuebox"><div class="label">Queue — tap to leave</div><div class="grid" id="queue"></div></div>
- <div class="queuebox"><div class="label">Class roster</div><div class="grid" id="roster"></div></div>
+ <div><h1 id="h1"></h1><div class="sub" id="sub"></div></div>
+ <div class="box"><div class="grid" id="main"></div><button class="ghost back" id="back" hidden onclick="show(null)">← Change period</button></div>
+ <div class="box"><div class="label">Queue — tap to leave</div><div class="grid" id="queue"></div></div>
 </main>
 <div class="footer"><span id="status">Waiting</span>
  <span class="sim"><span class="label">Simulator</span>
@@ -27,24 +28,49 @@
 const post = (u, b, m = "POST") => fetch(u, {method: m, headers: {"Content-Type": "application/json"}, body: b && JSON.stringify(b)});
 const sim = d => post("/api/sim/docked", {docked: d});
 startClock($("clock"));
-let last = "";
-function tile(text, cls, name, s) {
-  const b = document.createElement("button");
-  b.className = "tile " + cls; b.textContent = text;
-  if (cls !== "out") b.onclick = () => s.queue.includes(name)
-    ? post("/api/queue/" + encodeURIComponent(name), null, "DELETE") : post("/api/queue", {student: name});
-  return b;
+
+let S = null, period = null, idle = null, last = "";
+const same = (p, n, x) => x && x.period === p && x.student === n;
+const el = (tag, cls, text) => Object.assign(document.createElement(tag), {className: cls, textContent: text});
+
+// Step 1 = pick a period, step 2 = pick a name. Returns to step 1 after 20s idle.
+function show(p) {
+  period = p; last = "";
+  clearTimeout(idle);
+  if (p) idle = setTimeout(() => show(null), 20000);
+  render();
+}
+function join(p, n) {
+  post("/api/queue", {period: p, student: n}).then(() => show(null));
+}
+function leave(p, n) { post("/api/queue/" + encodeURIComponent(p) + "/" + encodeURIComponent(n), null, "DELETE"); }
+
+function render() {
+  if (!S) return;
+  const key = JSON.stringify([S.queue, S.out, S.roster, period]);
+  if (key === last) return; last = key;
+  $("back").hidden = !period;
+  if (!period) {
+    $("h1").replaceChildren("Tap Your", document.createElement("br"), Object.assign(el("span", "green", "Class Period")));
+    $("sub").textContent = "Then tap your name";
+    $("main").replaceChildren(...Object.keys(S.roster).map(p => {
+      const b = el("button", "tile period", "Period " + p); b.onclick = () => show(p); return b; }));
+  } else {
+    $("h1").replaceChildren("Tap Your", document.createElement("br"), el("span", "green", "Name"));
+    $("sub").textContent = "Period " + period;
+    $("main").replaceChildren(...S.roster[period].map(n => {
+      if (same(period, n, S.out)) return el("button", "tile out", n + " · OUT");
+      const queued = S.queue.some(q => same(period, n, q));
+      const b = el("button", "tile" + (queued ? " queued" : ""), n);
+      b.onclick = () => queued ? leave(period, n) : join(period, n); return b; }));
+  }
+  $("queue").replaceChildren(...(S.queue.length ? S.queue.map((q, i) => {
+    const b = el("button", "tile queued", `${i + 1}. ${q.student} · P${q.period}`); b.onclick = () => leave(q.period, q.student); return b; })
+    : [el("div", "sub", "Nobody waiting")]));
 }
 connect((s, left) => {
-  setPill(s);
+  S = s; setPill(s);
   $("status").textContent = s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
-  const key = JSON.stringify([s.queue, s.out, s.everyone]);
-  if (key === last) return; last = key;
-  $("queue").replaceChildren(...(s.queue.length
-    ? s.queue.map((n, i) => tile(`${i + 1}. ${n}`, "queued", n, s))
-    : [Object.assign(document.createElement("div"), {className: "sub", textContent: "Nobody waiting"})]));
-  $("roster").replaceChildren(...s.everyone.map(n =>
-    s.out && s.out.student === n ? tile(n + " · OUT", "out", n, s)
-    : s.queue.includes(n) ? tile(n, "queued", n, s) : tile(n, "", n, s)));
+  render();
 });
 </script>
