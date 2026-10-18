@@ -22,5 +22,5 @@ function startClock(el) {
 function setPill(s, left) {
   const pill = $("pill");
   pill.className = "pill" + (s.out ? " out" : "");
-  $("pillText").textContent = s.out ? "Pass out" : "Pass available";
+  $("pillText").textContent = (s.out ? "Pass out" : "Pass available") + (s.settings.simulator === "on" ? " · Simulator" : "");
 }

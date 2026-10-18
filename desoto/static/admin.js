@@ -468,21 +468,39 @@ views.data = async alive => {
 
 // ----------------------------------------------------------------- Settings
 views.settings = async alive => {
-  const view = $("view"), msg = h("div", {class: "okbox", hidden: true});
-  const opts = h("div", {class: "opts"});
-  const items = [
-    ["thick", "Thick bar", "Large digits with a thick progress bar beneath", h("div", {class: "prev"}, h("div", {class: "d"}, "4:32"), h("div", {class: "b"}, h("i")))],
-    ["pill", "Pill", "One large pill with the time inside the bar", h("div", {class: "prev"}, h("div", {class: "p"}, h("i"), h("span", null, "4:32")))],
-  ];
-  const mark = v => opts.querySelectorAll(".opt").forEach(o => o.classList.toggle("on", o.dataset.v === v));
-  items.forEach(([v, title, sub, prev]) => opts.append(h("button", {class: "opt", type: "button", "data-v": v, onclick: async () => {
-    try { await api("/api/admin/settings", {method: "PUT", body: {bar_style: v}}); mark(v); msg.hidden = false; msg.textContent = "Saved"; setTimeout(() => msg.hidden = true, 2500); }
-    catch (e) { msg.hidden = false; msg.className = "errbox"; msg.textContent = errText(e); }
-  }}, prev, h("b", null, title), h("small", null, sub))));
-  current.onState = s => mark(s.settings.bar_style);
-  view.append(h("h2", null, "Settings"), h("div", {class: "lead"}, "Changes apply to the hallway display immediately"),
-    card("Countdown style").appendChild(opts).parentNode, msg);
-  if (latest) mark(latest.settings.bar_style);
+  const view = $("view"), msg = h("div", {hidden: true});
+  const note = (text, cls) => { msg.hidden = false; msg.className = cls; msg.textContent = text; if (cls === "okbox") setTimeout(() => { msg.hidden = true; }, 2500); };
+  const groups = [];
+  // One card of mutually exclusive options. options: [key, title, subtitle, preview?]
+  function group(title, field, options, extra) {
+    const opts = h("div", {class: "opts"}), c = card(title);
+    options.forEach(([v, t, sub, prev]) => opts.append(h("button", {class: "opt", type: "button", "data-v": v, onclick: async () => {
+      try { await api("/api/admin/settings", {method: "PUT", body: {[field]: v}}); note("Saved", "okbox"); }
+      catch (e) { note(errText(e), "errbox"); }
+    }}, prev, h("b", null, t), h("small", null, sub))));
+    c.append(opts); if (extra) c.append(extra);
+    groups.push(s => opts.querySelectorAll(".opt").forEach(o => {
+      o.classList.toggle("on", o.dataset.v === s.settings[field]);
+      if (field === "simulator" && o.dataset.v === "off") { o.disabled = !s.sensor; o.style.opacity = s.sensor ? "" : ".45"; }
+    }));
+    return c;
+  }
+  const icon = t => h("div", {class: "prev"}, h("div", {class: "d", style: "font-size:1.6rem"}, t));
+  const simNote = h("div", {class: "body help"});
+  view.append(h("h2", null, "Settings"), h("div", {class: "lead"}, "Changes apply to the kiosk and hallway display immediately"),
+    group("Pass input", "simulator", [
+      ["off", "Sensor", "The physical pass and hall sensor control the pass", icon("🧲 Sensor")],
+      ["on", "Simulator", "For testing: the kiosk shows Take pass / Return pass buttons and the sensor is ignored", icon("🖱 Simulator")]], simNote),
+    group("Countdown style", "bar_style", [
+      ["thick", "Thick bar", "Large digits with a thick progress bar beneath", h("div", {class: "prev"}, h("div", {class: "d"}, "4:32"), h("div", {class: "b"}, h("i")))],
+      ["pill", "Pill", "One large pill with the time inside the bar", h("div", {class: "prev"}, h("div", {class: "p"}, h("i"), h("span", null, "4:32")))]]),
+    msg);
+  current.onState = s => {
+    groups.forEach(g => g(s));
+    simNote.textContent = s.sensor ? "While the simulator is on, the real sensor is ignored. Switching back to Sensor takes over from wherever the pass is."
+      : "No sensor is set up on this computer (start with DESOTO_GPIO_PIN), so the simulator is the only way to control the pass.";
+  };
+  if (latest) current.onState(latest);
 };
 
 // --------------------------------------------------------------------- boot

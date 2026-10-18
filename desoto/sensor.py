@@ -16,3 +16,7 @@ class GpioHallSensor:
         self.button.when_pressed = lambda: loop.call_soon_threadsafe(on_change, True)
         self.button.when_released = lambda: loop.call_soon_threadsafe(on_change, False)
         on_change(self.button.is_pressed)
+
+    @property
+    def docked(self) -> bool:
+        return bool(self.button.is_pressed)

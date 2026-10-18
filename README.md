@@ -19,7 +19,7 @@ kiosk, display and admin addresses. To change settings, copy `.env.example` to `
 
 | Page | URL |
 |---|---|
-| Kiosk (has simulator buttons for take/return pass) | `http://<host>:8000/` |
+| Kiosk (simulator buttons appear when the simulator is on) | `http://<host>:8000/` |
 | Hallway display | `http://<host>:8000/display.html` |
 | Admin | `http://<host>:8000/admin.html` |
 
@@ -43,7 +43,11 @@ the PIN-protected admin endpoints return them. In the admin pages IDs are masked
 - **Data**: totals, average / longest trip, over-time counts, trips per day, average length by day,
   time-of-day and per-period charts, and a sortable per-student table with a 12-week trend.
   Every chart has a **Table** view. Export per-student numbers to CSV.
-- **Settings**: countdown style (thick bar or pill), applied to the display live.
+- **Settings**: **Pass input** (Sensor or Simulator) and countdown style (thick bar or pill), applied live.
+  Simulator on = the kiosk shows Take pass / Return pass buttons and the real sensor is ignored; off = the
+  sensor controls the pass and the buttons disappear. Switching back to Sensor catches up with where the pass
+  really is. A computer with no sensor configured can't turn the simulator off. When `DESOTO_GPIO_PIN` is set,
+  a fresh install starts on Sensor; otherwise it starts on Simulator. The page header shows "· Simulator" while it is on.
 
 ### Roster CSV
 

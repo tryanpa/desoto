@@ -25,7 +25,7 @@
  <div class="box" style="width:100%"><div class="grid" id="main"></div></div>
 </main>
 <div class="footer"><span id="status">Waiting</span>
- <span class="sim"><span class="label">Simulator</span>
+ <span class="sim" id="sim" hidden><span class="label">Simulator</span>
  <button class="ghost" onclick="sim(false)">Take pass</button><button class="ghost" onclick="sim(true)">Return pass</button></span></div>
 <script src="common.js"></script>
 <script>
@@ -77,7 +77,7 @@ function render() {
 }
 if (location.hash.length > 1) show(decodeURIComponent(location.hash.slice(1)));  // e.g. /#3 opens period 3
 connect((s, left) => {
-  S = s; setPill(s);
+  S = s; setPill(s); $("sim").hidden = s.settings.simulator !== "on";
   $("status").textContent = flash ? flash : s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
   render();
 });

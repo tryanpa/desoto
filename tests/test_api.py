@@ -27,7 +27,7 @@ def env(tmp_path, monkeypatch):
 def test_settings_save_and_reload(env):
     c, _, p = env()
     assert c.put("/api/admin/settings", json={"bar_style": "pill"}).status_code == 200
-    assert json.loads(p["settings_path"].read_text()) == {"bar_style": "pill"}
+    assert json.loads(p["settings_path"].read_text())["bar_style"] == "pill"
     assert c.put("/api/admin/settings", json={"bar_style": "x"}).status_code == 422
     c2 = TestClient(create_app(PassState({}), **p))
     assert c2.get("/api/state").json()["settings"]["bar_style"] == "pill"
@@ -127,3 +127,37 @@ def test_csv_formula_injection_is_defused(env):
     c.post("/api/queue", json={"period": "1", "student": "=HYPERLINK(\"x\")"})
     c.post("/api/sim/docked", json={"docked": False})
     assert "'=HYPERLINK" in c.get("/api/admin/log.csv").text
+
+
+def test_simulator_setting_gates_the_sim_endpoint(env):
+    c, state, p = env()
+    state.sensor_configured = True
+    assert c.post("/api/sim/docked", json={"docked": False}).status_code == 200
+    assert c.put("/api/admin/settings", json={"simulator": "off"}).status_code == 200
+    assert c.post("/api/sim/docked", json={"docked": True}).status_code == 403
+    assert c.get("/api/state").json()["settings"]["simulator"] == "off"
+    assert json.loads(p["settings_path"].read_text())["simulator"] == "off"
+    assert c.put("/api/admin/settings", json={}).status_code == 422
+    assert c.put("/api/admin/settings", json={"simulator": "x"}).status_code == 422
+    c.put("/api/admin/settings", json={"simulator": "on"})
+    assert c.post("/api/sim/docked", json={"docked": True}).status_code == 200
+
+
+def test_cannot_turn_simulator_off_without_a_sensor(env):
+    c, state, _ = env()
+    assert not state.sensor_configured
+    assert c.put("/api/admin/settings", json={"simulator": "off"}).status_code == 409
+    assert state.simulator_on
+
+
+def test_switching_to_sensor_catches_up_with_it(env):
+    c, state, _ = env()
+    state.sensor_configured = True
+
+    class Fake:  # the pass is physically sitting in its dock
+        docked = True
+    c.app.state.sensor = Fake()
+    c.post("/api/sim/docked", json={"docked": False})  # simulator says it is out
+    assert state.out
+    c.put("/api/admin/settings", json={"simulator": "off"})
+    assert state.out is None and state.docked

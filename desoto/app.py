@@ -45,6 +45,7 @@ def _csv_response(name: str, header, rows) -> Response:
 
 def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] = None,
                log: Optional[TripLog] = None, roster_path: Optional[Path] = None) -> FastAPI:
+    owns_state = state is None
     if state is None:
         data = Path(os.environ.get("DESOTO_DATA", ROOT / "data"))
         data.mkdir(parents=True, exist_ok=True)
@@ -57,9 +58,13 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         log = TripLog(data / "trips.db")
     if log is not None:
         state.log = log
-    if settings_path and settings_path.exists():
-        for k, v in json.loads(settings_path.read_text()).items():
-            state.set_setting(k, v)
+    saved = json.loads(settings_path.read_text()) if settings_path and settings_path.exists() else {}
+    for k, v in saved.items():
+        state.set_setting(k, v)
+    if owns_state:
+        state.sensor_configured = bool(os.environ.get("DESOTO_GPIO_PIN"))
+        if "simulator" not in saved and state.sensor_configured:
+            state.set_setting("simulator", "off")  # a real install starts on the sensor
     admin_pin = os.environ.get("DESOTO_ADMIN_PIN")
 
     app = FastAPI(title="Desoto")
@@ -75,8 +80,8 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
                 clients.discard(ws)
 
     def on_sensor(docked: bool) -> None:
-        state.set_docked(docked)
-        asyncio.ensure_future(broadcast())
+        if state.from_sensor(docked):
+            asyncio.ensure_future(broadcast())
 
     @app.on_event("startup")
     async def startup() -> None:
@@ -122,7 +127,8 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
     @app.post("/api/sim/docked")
     async def simulate(body: Docked):
         """Simulated sensor for development without hardware."""
-        state.set_docked(body.docked)
+        if not state.from_simulator(body.docked):
+            raise HTTPException(403, "The simulator is turned off in Settings")
         await broadcast()
         return state.snapshot()
 
@@ -157,12 +163,23 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         return {"ok": True}
 
     class Setting(BaseModel):
-        bar_style: str
+        bar_style: Optional[str] = None
+        simulator: Optional[str] = None
 
     @admin.put("/settings")
     async def put_settings(body: Setting):
-        if not state.set_setting("bar_style", body.bar_style):
-            raise HTTPException(422, "Invalid bar_style")
+        changes = {k: v for k, v in body.dict().items() if v is not None}
+        if not changes:
+            raise HTTPException(422, "Nothing to change")
+        if changes.get("simulator") == "off" and not state.sensor_configured:
+            raise HTTPException(409, "No sensor is configured (set DESOTO_GPIO_PIN), so nothing could take the pass")
+        for k, v in changes.items():
+            if not state.set_setting(k, v):
+                raise HTTPException(422, f"Invalid value for {k}")
+        if changes.get("simulator") == "off":
+            sensor = getattr(app.state, "sensor", None)
+            if sensor is not None:  # hand control back to the sensor and catch up with where the pass really is
+                state.set_docked(sensor.docked)
         if settings_path:
             settings_path.write_text(json.dumps(state.settings))
         await broadcast()

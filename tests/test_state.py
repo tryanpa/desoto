@@ -37,3 +37,14 @@ def test_settings():
     assert s.settings["bar_style"] == "thick"
     assert s.set_setting("bar_style", "pill") and s.snapshot()["settings"]["bar_style"] == "pill"
     assert not s.set_setting("bar_style", "neon") and not s.set_setting("nope", "x")
+
+
+def test_simulator_and_sensor_are_exclusive():
+    s, _ = make()
+    s.join("1", "A")
+    assert s.simulator_on  # tests and laptops default to the simulator
+    assert not s.from_sensor(False) and s.docked  # sensor ignored while simulating
+    assert s.from_simulator(False) and s.out
+    assert s.set_setting("simulator", "off") and not s.set_setting("simulator", "maybe")
+    assert not s.from_simulator(True) and s.out  # simulator ignored while on the sensor
+    assert s.from_sensor(True) and s.out is None
