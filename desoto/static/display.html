@@ -4,6 +4,8 @@
 <style>
  .layout{flex:1;display:grid;grid-template-columns:1fr clamp(300px,28vw,440px);min-height:0}
  main{gap:36px;text-align:center}
+ .label.big{font-size:clamp(1.3rem,2.8vw,2.4rem);color:#8a8a8a;letter-spacing:.3em}
+ .label.mid{font-size:clamp(.95rem,1.7vw,1.4rem);min-height:1.4em;color:#777}
  .who{font-weight:900;font-size:clamp(2.6rem,7vw,6rem);margin-top:8px}
  .count{font-family:var(--mono);font-weight:700;font-size:clamp(6rem,20vw,16rem);line-height:1;letter-spacing:.04em}
  .over{animation:blink 1s infinite}@keyframes blink{50%{opacity:.35}}
@@ -33,7 +35,7 @@
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
 <div class="layout">
  <main>
-  <div><div class="label" id="oLabel">Pass</div><div class="who" id="out"></div><div class="label" id="oPeriod"></div>
+  <div><div class="label big" id="oLabel">Pass</div><div class="who" id="out"></div><div class="label mid" id="oSub"></div>
   <div class="count" id="count"></div><div class="bar" id="bar"><div id="fill"></div><span class="t" id="pt"></span></div></div>
  </main>
  <aside><div class="head"><div class="label">Queue</div><div class="n" id="qn"></div></div><div id="list"></div></aside>
@@ -59,7 +61,7 @@ connect((s, left) => {
   document.body.classList.toggle("pill-bar", s.settings.bar_style === "pill");
   if (s.out) {
     $("oLabel").textContent = "Out now"; $("out").textContent = s.out.student;
-    $("oPeriod").textContent = s.out.period ? "Period " + s.out.period : "";
+    $("oSub").textContent = left < 0 ? "Time over" : "Time remaining";
     $("count").textContent = fmt(left); $("count").className = "count " + tone(left);
     // Over time the bar fills solid red and blinks (an empty bar would hide the colour).
     const pct = left < 0 ? 100 : Math.min(100, left / s.duration * 100);
@@ -68,7 +70,7 @@ connect((s, left) => {
     $("fill").style.background = left < 0 ? "var(--red)" : left < 120 ? "var(--amber)" : "var(--green)";
     $("status").textContent = left < 0 ? `Over time — ${s.out.student}` : `${s.out.student} is out`;
   } else {
-    $("oLabel").textContent = "Pass"; $("out").textContent = "Available"; $("oPeriod").textContent = "";
+    $("oLabel").textContent = "Pass"; $("out").textContent = "Available"; $("oSub").textContent = "";
     $("count").textContent = "✓"; $("count").className = "count green";
     $("fill").style.width = "100%"; $("fill").style.background = "var(--green)";
     $("bar").classList.remove("over"); $("pt").textContent = "✓";
