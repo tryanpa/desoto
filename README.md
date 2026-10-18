@@ -8,6 +8,12 @@ site for the roster, the activity log and usage data.
 
 ## Run
 
+    ./start.sh
+
+That sets up the virtualenv and dependencies the first time, then starts the server and prints the
+kiosk, display and admin addresses. To change settings, copy `.env.example` to `.env` and edit it
+(for example `DESOTO_ADMIN_PIN=1234`). Manual equivalent:
+
     pip install -r requirements.txt
     uvicorn desoto.app:app --host 0.0.0.0 --port 8000
 
@@ -17,9 +23,8 @@ site for the roster, the activity log and usage data.
 | Hallway display | `http://<host>:8000/display.html` |
 | Admin | `http://<host>:8000/admin.html` |
 
-**Set an admin PIN** so only you can open the admin pages (they show student IDs):
-
-    DESOTO_ADMIN_PIN=1234 uvicorn desoto.app:app --host 0.0.0.0 --port 8000
+**Set an admin PIN** so only you can open the admin pages (they show student IDs): put
+`DESOTO_ADMIN_PIN=1234` in `.env`.
 
 ## Student IDs and privacy
 
@@ -76,7 +81,7 @@ the pin low while docked; removing the pass starts the timer.
     python tools/make_roster.py 6 28 > rosters/scale-test.json     # 6 periods x 28 students, with IDs
     mkdir -p data && cp rosters/scale-test.json data/roster.json
     python tools/make_trips.py --roster data/roster.json --days 60 --reset   # fake trip history
-    uvicorn desoto.app:app --host 0.0.0.0 --port 8000
+    ./start.sh
 
 Open `/#3` to jump the kiosk straight to period 3. Delete `data/` to go back to a clean slate.
 
