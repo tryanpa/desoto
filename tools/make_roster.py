@@ -1,4 +1,4 @@
-"""Generate a random test roster: python tools/make_roster.py [periods] [per_period] > roster.json"""
+"""Generate a random test roster with student IDs: python tools/make_roster.py [periods] [per_period] > roster.json"""
 import json
 import random
 import sys
@@ -14,6 +14,7 @@ Tanaka Thompson Torres Vargas Walker Wilson Xiong Young Zhang""".split()
 periods = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 per = int(sys.argv[2]) if len(sys.argv) > 2 else 28
 rng = random.Random(42)
+ids = set()
 names = set()
 roster = {}
 for p in range(1, periods + 1):
@@ -23,5 +24,12 @@ for p in range(1, periods + 1):
         if n not in names:
             names.add(n)
             group.append(n)
-    roster[str(p)] = sorted(group, key=lambda n: n.split()[-1])
+    group.sort(key=lambda n: n.split()[-1])
+    roster[str(p)] = []
+    for n in group:
+        sid = rng.randint(4250000, 4289999)
+        while sid in ids:
+            sid = rng.randint(4250000, 4289999)
+        ids.add(sid)
+        roster[str(p)].append({"name": n, "id": str(sid)})
 print(json.dumps(roster, indent=1))

@@ -1,63 +1,19 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Desoto Admin</title>
-<link rel="stylesheet" href="theme.css">
-<style>
- .shell{flex:1;display:grid;grid-template-columns:260px 1fr;min-height:0}
- nav{background:var(--panel);border-right:1px solid var(--border);padding:24px 16px}
- nav .label{margin:0 12px 10px}
- nav a{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:10px;border:1px solid transparent;color:var(--muted);font-weight:700;text-decoration:none}
- nav a.on{background:var(--green-bg);border-color:#285c3b;color:var(--green)}
- section{padding:40px;overflow-y:auto}
- h2{margin:0;font-weight:900;font-size:2rem}.lead{color:var(--muted);font-weight:600;margin:6px 0 28px}
- .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;max-width:920px}
- .card header{padding:18px 24px;border-bottom:1px solid var(--border)}
- .opts{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:24px}
- .opt{background:var(--bg);border:2px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;color:var(--text);text-align:left;font-family:var(--head)}
- .opt.on{border-color:var(--green);background:#16221b}
- .opt b{display:block;font-size:1.05rem;margin-bottom:4px}.opt small{color:var(--muted);font-weight:600}
- .prev{height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;margin-bottom:14px;background:var(--panel);border-radius:8px}
- .prev .d{font-family:var(--mono);font-weight:700;font-size:2.2rem;color:var(--green)}
- .prev .b{width:80%;height:16px;border-radius:8px;background:var(--panel2);overflow:hidden}.prev .b i{display:block;width:70%;height:100%;background:var(--green)}
- .prev .p{width:80%;height:56px;border-radius:999px;background:var(--panel2);position:relative;overflow:hidden;border:1px solid var(--border)}
- .prev .p i{position:absolute;inset:0 30% 0 0;background:var(--green)}
- .prev .p span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:800 1.6rem var(--mono);color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.45)}
- #msg{height:1.4em;margin:14px 0 0;color:var(--green);font-weight:700}
- #msg.err{color:var(--red)}
- @media (max-width:760px){.shell{grid-template-columns:1fr}nav{display:none}.opts{grid-template-columns:1fr}}
-</style>
+<link rel="stylesheet" href="theme.css"><link rel="stylesheet" href="admin.css">
 <div class="topbar"><div class="brand">Desoto<i>—</i>Admin</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
 <div class="shell">
- <nav><div class="label">System</div><a class="on" href="#">⚙ Settings</a></nav>
- <section>
-  <h2>Settings</h2><div class="lead">Changes apply to the hallway display immediately</div>
-  <div class="card"><header><div class="label">Countdown style</div></header>
-   <div class="opts">
-    <button class="opt" data-v="thick"><div class="prev"><div class="d">4:32</div><div class="b"><i></i></div></div><b>Thick bar</b><small>Large digits with a thick progress bar beneath</small></button>
-    <button class="opt" data-v="pill"><div class="prev"><div class="p"><i></i><span>4:32</span></div></div><b>Pill</b><small>One large pill with the time inside the bar</small></button>
-   </div></div>
-  <div id="msg"></div>
- </section>
+ <nav id="nav">
+  <div class="label">Overview</div><a href="#live">Live</a>
+  <div class="label">Students</div><a href="#roster">Roster</a><a href="#activity">Activity Log</a>
+  <div class="label">Analytics</div><a href="#data">Data</a>
+  <div class="label">System</div><a href="#settings">Settings</a>
+  <div class="sp"></div>
+  <label class="chk"><input type="checkbox" id="showIds"> Show student IDs</label>
+  <div class="note" id="pinNote"></div>
+ </nav>
+ <div id="view"></div>
 </div>
 <div class="footer" id="status">Admin</div>
-<script src="common.js"></script>
-<script>
-startClock($("clock"));
-const store = { get: () => { try { return sessionStorage.getItem("pin") || ""; } catch (e) { return ""; } },
-                set: v => { try { sessionStorage.setItem("pin", v); } catch (e) {} } };
-const say = (t, err) => { $("msg").textContent = t; $("msg").className = err ? "err" : ""; };
-function mark(v) { document.querySelectorAll(".opt").forEach(o => o.classList.toggle("on", o.dataset.v === v)); }
-
-async function save(v) {
-  const send = () => fetch("/api/settings", {method: "PUT", headers: {"Content-Type": "application/json", "X-Admin-Pin": store.get()}, body: JSON.stringify({bar_style: v})});
-  let r = await send();
-  if (r.status === 401) {
-    const pin = prompt("Admin PIN"); if (pin === null) return say("Cancelled", true);
-    store.set(pin); r = await send();
-  }
-  if (r.ok) { mark(v); say("Saved"); setTimeout(() => say(""), 2500); }
-  else say(r.status === 401 ? "Wrong PIN" : "Could not save", true);
-}
-document.querySelectorAll(".opt").forEach(o => o.onclick = () => save(o.dataset.v));
-connect(s => { setPill(s); mark(s.settings.bar_style); });
-</script>
+<script src="common.js"></script><script src="charts.js"></script><script src="admin.js"></script>

@@ -3,8 +3,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
-DEFAULT_DURATION = 7 * 60
+from .db import TripLog
 
+DEFAULT_DURATION = 7 * 60
 BAR_STYLES = ("thick", "pill")
 
 # A student is identified by (class period, name): names can repeat across periods.
@@ -15,11 +16,12 @@ Student = Tuple[str, str]
 class Trip:
     student: Student
     started_at: float
+    log_id: Optional[int] = None
 
 
 @dataclass
 class PassState:
-    roster: Dict[str, List[str]]  # period -> names
+    roster: Dict[str, List[str]]  # period -> names. Public: the kiosk shows these.
     duration: int = DEFAULT_DURATION
     clock: Callable[[], float] = time.time
     queue: List[Student] = field(default_factory=list)
@@ -27,7 +29,21 @@ class PassState:
     docked: bool = True
     history: List[dict] = field(default_factory=list)
     settings: Dict[str, str] = field(default_factory=lambda: {"bar_style": "thick"})
+    ids: Dict[Student, str] = field(default_factory=dict)  # PRIVATE: never put in snapshot()
+    log: Optional[TripLog] = None
 
+    # -- roster ------------------------------------------------------------
+    def set_roster(self, full: Dict[str, List[dict]]) -> None:
+        """Replace the roster ({period: [{name, id}]}); drop queued students who are gone."""
+        self.roster = {p: [s["name"] for s in students] for p, students in full.items()}
+        self.ids = {(p, s["name"]): s["id"] for p, students in full.items() for s in students}
+        self.queue = [s for s in self.queue if s[1] in self.roster.get(s[0], [])]
+
+    def roster_full(self) -> Dict[str, List[dict]]:
+        return {p: [{"name": n, "id": self.ids.get((p, n), "")} for n in names]
+                for p, names in self.roster.items()}
+
+    # -- settings ----------------------------------------------------------
     def set_setting(self, key: str, value: str) -> bool:
         """Change a display setting. Returns False for unknown keys or bad values."""
         if key == "bar_style" and value in BAR_STYLES:
@@ -35,6 +51,7 @@ class PassState:
             return True
         return False
 
+    # -- queue -------------------------------------------------------------
     def join(self, period: str, name: str) -> bool:
         """Add a rostered student to the queue unless already queued or out."""
         s = (period, name)
@@ -52,7 +69,13 @@ class PassState:
             return True
         return False
 
-    def set_docked(self, docked: bool) -> None:
+    def clear_queue(self) -> int:
+        n = len(self.queue)
+        self.queue.clear()
+        return n
+
+    # -- the pass ----------------------------------------------------------
+    def set_docked(self, docked: bool, source: str = "sensor") -> None:
         """Called by the sensor. Undocking starts the next student's timer."""
         if docked == self.docked:
             return
@@ -61,6 +84,8 @@ class PassState:
         if not docked:
             who = self.queue.pop(0) if self.queue else ("", "Unqueued")
             self.out = Trip(who, now)
+            if self.log:
+                self.out.log_id = self.log.open_trip(who[0], who[1], self.ids.get(who, ""), now, self.duration)
         elif self.out:
             self.history.append({
                 "period": self.out.student[0],
@@ -68,9 +93,19 @@ class PassState:
                 "started_at": self.out.started_at,
                 "seconds": round(now - self.out.started_at),
             })
+            if self.log and self.out.log_id is not None:
+                self.log.close_trip(self.out.log_id, now, source)
             self.out = None
 
+    def return_pass(self) -> bool:
+        """Teacher override when the sensor missed the return."""
+        if not self.out:
+            return False
+        self.set_docked(True, source="manual")
+        return True
+
     def snapshot(self) -> dict:
+        """Public state for the kiosk and hallway display. Must never contain student IDs."""
         person = lambda s: {"period": s[0], "student": s[1]}
         return {
             "now": self.clock(),
