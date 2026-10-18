@@ -12,6 +12,7 @@ countdown (turns red and counts up when over time), and who is next.
 
 - Kiosk: `http://<host>:8000/` (includes simulator buttons for take/return pass)
 - Display: `http://<host>:8000/display.html`
+- Admin: `http://<host>:8000/admin.html` — choose the countdown style (thick bar or pill). Saved to `settings.json` and applied to the display live. Set `DESOTO_ADMIN_PIN=1234` to require a PIN to change settings.
 - Roster: edit `roster.json` (`{"period": ["names"]}`) (or `DESOTO_ROSTER=path`). Timer: `DESOTO_SECONDS` (default 420).
 
 ## Raspberry Pi hall sensor

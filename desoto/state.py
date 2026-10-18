@@ -5,6 +5,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 DEFAULT_DURATION = 7 * 60
 
+BAR_STYLES = ("thick", "pill")
+
 # A student is identified by (class period, name): names can repeat across periods.
 Student = Tuple[str, str]
 
@@ -24,6 +26,14 @@ class PassState:
     out: Optional[Trip] = None
     docked: bool = True
     history: List[dict] = field(default_factory=list)
+    settings: Dict[str, str] = field(default_factory=lambda: {"bar_style": "thick"})
+
+    def set_setting(self, key: str, value: str) -> bool:
+        """Change a display setting. Returns False for unknown keys or bad values."""
+        if key == "bar_style" and value in BAR_STYLES:
+            self.settings[key] = value
+            return True
+        return False
 
     def join(self, period: str, name: str) -> bool:
         """Add a rostered student to the queue unless already queued or out."""
@@ -70,4 +80,5 @@ class PassState:
                     if self.out else None),
             "queue": [person(s) for s in self.queue],
             "roster": self.roster,
+            "settings": dict(self.settings),
         }

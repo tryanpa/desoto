@@ -10,7 +10,7 @@
  .bar{position:relative;width:min(900px,60vw);height:36px;background:var(--panel2);border-radius:18px;overflow:hidden;margin:0 auto}
  .bar>div{height:100%;background:var(--green);transition:width .25s linear,background .25s}
  .bar .t{display:none}
- /* ?bar=pill: big pill with the time inside; the large digits above are hidden */
+ /* Settings → bar_style "pill": big pill with the time inside; the large digits above are hidden */
  .pill-bar .count{display:none}
  .pill-bar .bar{height:clamp(90px,16vh,150px);border-radius:999px;width:min(1000px,62vw);margin-top:28px;border:1px solid var(--border)}
  .pill-bar .bar .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;font-size:clamp(3rem,9vw,7.5rem);letter-spacing:.06em;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.45)}
@@ -42,7 +42,6 @@
 <script src="common.js"></script>
 <script>
 startClock($("clock"));
-if (new URLSearchParams(location.search).get("bar") === "pill") document.body.classList.add("pill-bar");
 let lastQ = "";
 const mk = (tag, cls, text) => Object.assign(document.createElement(tag), {className: cls, textContent: text});
 function renderQueue(q) {
@@ -57,6 +56,7 @@ function renderQueue(q) {
 }
 connect((s, left) => {
   setPill(s); renderQueue(s.queue);
+  document.body.classList.toggle("pill-bar", s.settings.bar_style === "pill");
   if (s.out) {
     $("oLabel").textContent = "Out now"; $("out").textContent = s.out.student;
     $("oPeriod").textContent = s.out.period ? "Period " + s.out.period : "";

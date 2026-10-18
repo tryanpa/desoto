@@ -30,3 +30,10 @@ def test_unqueued_trip():
     s, _ = make()
     s.set_docked(False)
     assert s.out.student == ("", "Unqueued")
+
+
+def test_settings():
+    s, _ = make()
+    assert s.settings["bar_style"] == "thick"
+    assert s.set_setting("bar_style", "pill") and s.snapshot()["settings"]["bar_style"] == "pill"
+    assert not s.set_setting("bar_style", "neon") and not s.set_setting("nope", "x")
