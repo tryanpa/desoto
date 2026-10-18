@@ -74,11 +74,48 @@ Two students with the same name in one period are listed as `Name` and `Name (2)
 | `DESOTO_SECONDS` | trip length (default 420) |
 | `DESOTO_GPIO_PIN` | BCM pin of the hall sensor (Raspberry Pi) |
 
-## Raspberry Pi hall sensor
+## Raspberry Pi setup (kiosk + hallway display)
 
-Set `DESOTO_GPIO_PIN=<BCM pin>` (and `pip install gpiozero lgpio`). Wire an open-collector hall
-sensor (e.g. A3144) between the pin and ground (internal pull-up used). A magnet in the pass pulls
-the pin low while docked; removing the pass starts the timer.
+Tested only by dry run so far (`--dry-run` prints every step and changes nothing). Written for Raspberry Pi OS
+**Trixie** (also fine on Bookworm), desktop edition, with the Pi set to your network and this repo cloned on it.
+
+**Pi 1: server + touch kiosk** (the Pi that has the sensor and the touchscreen):
+
+    git clone <your repo URL> desoto && cd desoto
+    ./deploy/pi-install.sh --hostname desoto          # try it first with --dry-run
+    sudo reboot
+
+It installs the packages, builds the virtualenv (with the system GPIO libraries), asks for an admin PIN, runs the
+server as a systemd service (`desoto`, starts at boot and restarts if it stops), and opens the kiosk full screen at
+every login (desktop autologin on, screen blanking off). Use `--no-kiosk` for a server with no screen.
+Check it: `systemctl status desoto`, logs: `journalctl -u desoto -f`.
+
+**Pi 2: hallway display** (any Pi with a screen; no Python needed):
+
+    git clone <your repo URL> desoto && cd desoto
+    ./deploy/pi-install.sh display desoto.local       # or the server Pi's IP address
+    sudo reboot
+
+If `desoto.local` doesn't resolve (some school networks block it), use the server Pi's IP address instead, and give
+that Pi a fixed address in your router. The browser waits for the server, so power-up order doesn't matter.
+
+If the touch lands in the wrong place, or the screen still sleeps, check Raspberry Pi Configuration -> Display
+(screen blanking) and the Screen Configuration tool (touch mapping); both are standard Trixie settings.
+
+### Hall sensor / reed switch wiring
+
+`DESOTO_GPIO_PIN` (default 17 = physical pin 11, set by the installer in `.env`) is the BCM pin that reads the pass.
+The pin is read with its internal pull-up, so **docked = pin pulled to ground**. Two ways to wire it:
+
+- **Reed switch (simplest, no power):** one wire to GPIO 17 (pin 11), the other to ground (pin 9). A magnet in the
+  pass closes the switch while the pass sits in its dock.
+- **Hall sensor, e.g. A3144 (open collector):** VCC to 5 V (pin 2), GND to ground (pin 9), output to GPIO 17
+  (pin 11). The Pi's pull-up lifts the output to 3.3 V, which is safe for the pin. It needs 4.5 V or more to run, so don't
+  power it from 3.3 V.
+
+The Pi 400's header is on the back and unlabeled, so verify pin positions with a Pi 400 pin chart or by running
+`pinout` before connecting wires. Then turn the simulator off in the admin **Settings** (a fresh install with a sensor
+configured already starts on Sensor).
 
 ## Try it at scale with fake data
 
