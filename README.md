@@ -23,3 +23,10 @@ low while docked; removing the pass starts the timer.
 ## Test
 
     pytest
+
+## Scale test roster
+
+    python tools/make_roster.py 6 28 > rosters/scale-test.json   # 6 periods x 28 students (seeded, repeatable)
+    DESOTO_ROSTER=rosters/scale-test.json uvicorn desoto.app:app --host 0.0.0.0 --port 8000
+
+Open `/#3` to jump the kiosk straight to period 3.

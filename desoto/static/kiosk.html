@@ -5,20 +5,28 @@
  h1{margin:0;text-align:center;font-weight:900;font-size:clamp(2.4rem,6vw,4.6rem);line-height:1.05}
  .sub{color:var(--muted);font-weight:700;letter-spacing:.04em;margin-top:12px;text-align:center}
  .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:1100px}
+ .grid.names{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));width:min(1400px,100%);max-width:none;gap:8px}
  .tile{min-width:150px;padding:18px 16px;font-size:.95rem}
  .tile.period{min-width:170px;padding:34px 20px;font-size:1.5rem}
+ .compact .tile{min-width:0;padding:12px 8px;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .compact h1{font-size:clamp(1.5rem,3vw,2.4rem)}.compact .sub{display:none}
+ .head{display:flex;align-items:center;gap:24px}
+ .strip{display:flex;gap:8px;max-width:100%;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;scrollbar-color:#444 transparent}
+ .strip::-webkit-scrollbar{height:6px}.strip::-webkit-scrollbar-thumb{background:#444;border-radius:3px}
+ .strip .tile{flex:none;padding:10px 14px;font-size:.85rem}
+ @media (max-height:700px){.compact .tile{padding:8px 6px;font-size:.85rem}.tile.period{padding:20px 16px}}
  .tile:active{transform:scale(.97)}
  .box{display:flex;flex-direction:column;align-items:center;gap:10px}
  .sim{display:flex;align-items:center;gap:10px}
  .sim .label{color:#444}
- .back{margin-top:4px}
 </style>
 <div class="topbar"><div class="brand">Desoto<i>—</i>Kiosk</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
 <main>
- <div><h1 id="h1"></h1><div class="sub" id="sub"></div></div>
- <div class="box"><div class="grid" id="main"></div><button class="ghost back" id="back" hidden onclick="show(null)">← Change period</button></div>
- <div class="box"><div class="label">Queue — tap to leave</div><div class="grid" id="queue"></div></div>
+ <div class="head"><button class="ghost" id="back" hidden onclick="show(null)">← Periods</button>
+  <div><h1 id="h1"></h1><div class="sub" id="sub"></div></div></div>
+ <div class="box" style="width:100%"><div class="grid" id="main"></div></div>
+ <div class="box" style="max-width:100%"><div class="label" id="qLabel">Queue — tap to leave</div><div class="strip" id="queue"></div></div>
 </main>
 <div class="footer"><span id="status">Waiting</span>
  <span class="sim"><span class="label">Simulator</span>
@@ -50,14 +58,16 @@ function render() {
   const key = JSON.stringify([S.queue, S.out, S.roster, period]);
   if (key === last) return; last = key;
   $("back").hidden = !period;
+  document.body.classList.toggle("compact", !!period);
+  $("main").className = "grid" + (period ? " names" : "");
+  $("qLabel").textContent = "Queue" + (S.queue.length ? ` (${S.queue.length})` : "") + " — tap to leave";
   if (!period) {
     $("h1").replaceChildren("Tap Your", document.createElement("br"), Object.assign(el("span", "green", "Class Period")));
     $("sub").textContent = "Then tap your name";
     $("main").replaceChildren(...Object.keys(S.roster).map(p => {
       const b = el("button", "tile period", "Period " + p); b.onclick = () => show(p); return b; }));
   } else {
-    $("h1").replaceChildren("Tap Your", document.createElement("br"), el("span", "green", "Name"));
-    $("sub").textContent = "Period " + period;
+    $("h1").replaceChildren("Period " + period + " — ", el("span", "green", "Tap Your Name"));
     $("main").replaceChildren(...S.roster[period].map(n => {
       if (same(period, n, S.out)) return el("button", "tile out", n + " · OUT");
       const queued = S.queue.some(q => same(period, n, q));
@@ -68,6 +78,7 @@ function render() {
     const b = el("button", "tile queued", `${i + 1}. ${q.student} · P${q.period}`); b.onclick = () => leave(q.period, q.student); return b; })
     : [el("div", "sub", "Nobody waiting")]));
 }
+if (location.hash.length > 1) show(decodeURIComponent(location.hash.slice(1)));  // e.g. /#3 opens period 3
 connect((s, left) => {
   S = s; setPill(s);
   $("status").textContent = s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
