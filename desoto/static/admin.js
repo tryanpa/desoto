@@ -131,6 +131,7 @@ async function route() {
   const view = views[name] ? name : "live";
   document.querySelectorAll("#nav a").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + view));
   const my = ++token;
+  if (current.timer) clearInterval(current.timer);
   current = {name: view, redraws: []};
   $("view").replaceChildren();
   try { await views[view](() => my === token); }
@@ -467,6 +468,43 @@ views.data = async alive => {
 };
 
 // ----------------------------------------------------------------- Settings
+// Live readings from the real sensor, for tuning the pass and holder. Polls while the page is open.
+function sensorCard(alive) {
+  const status = h("div", {class: "sensor-status none"}, "Waiting…"), note = h("div", {class: "help", style: "margin:-6px 0 14px"});
+  const tChanges = stat("Changes"), tGap = stat("Shortest gap"), tLast = stat("Last change");
+  const tiles = h("div", {class: "tiles", style: "margin-bottom:16px"}, tChanges.el, tGap.el, tLast.el), list = h("div");
+  const c = card("Sensor test", btn("Reset", async () => { try { await api("/api/admin/sensor/reset", {method: "POST"}); poll(); } catch (e) { /* next poll shows it */ } }, "sm"));
+  c.append(h("div", {class: "body"},
+    h("div", {class: "help", style: "margin-bottom:14px"}, "Lift the pass out of the holder and put it back a few times. Each lift and each return should add exactly one row below. Extra rows, or gaps well under a second, mean the sensor is flickering: change the magnet gap or how firmly the pass seats."),
+    status, note, tiles, list));
+  const gapText = g => g == null ? "—" : g < 10 ? `${Math.round(g * 1000)} ms` : `${g.toFixed(1)} s`;
+  async function poll() {
+    let d;
+    try { d = await api("/api/admin/sensor"); } catch (e) { return; }
+    if (!alive()) return;
+    tiles.hidden = list.hidden = !d.configured; note.hidden = !d.configured;
+    if (!d.configured) {
+      status.className = "sensor-status none";
+      status.textContent = "No sensor is set up on this computer. Open this page on the Pi that has the sensor (it runs with DESOTO_GPIO_PIN set).";
+      status.style.fontSize = "1rem"; status.style.letterSpacing = "0"; return;
+    }
+    status.style.fontSize = status.style.letterSpacing = "";
+    status.className = "sensor-status " + (d.docked === null ? "none" : d.docked ? "docked" : "undocked");
+    status.textContent = d.docked === null ? "Waiting for a reading…" : d.docked ? "Docked: pass is in the holder" : "Out: pass is lifted";
+    note.textContent = d.simulator ? "The simulator is on, so the kiosk ignores the sensor. These readings are still live." : "";
+    tChanges.set(String(d.changes));
+    tGap.set(gapText(d.min_gap), d.min_gap != null && d.min_gap < 0.5 ? "very quick: likely flicker" : "", d.min_gap != null && d.min_gap < 0.5 ? "amber" : "");
+    tLast.set(d.events.length ? tstr(d.events[0].at) : "—");
+    list.replaceChildren(d.events.length ? h("div", {class: "scroll", style: "max-height:320px"}, table([{label: "Time"}, {label: "Reading"}, {label: "Since previous", num: true}, {label: ""}],
+      d.events.map((e, i) => h("tr", null, h("td", {class: "mono"}, tstr(e.at)),
+        h("td", {class: "name"}, e.docked ? "Docked" : "Out of holder"), h("td", {class: "num"}, e.gap == null ? "—" : gapText(e.gap)),
+        h("td", null, e.gap == null ? badge("Start", "") : e.gap < 0.5 ? badge("Quick", "warn", "Under half a second since the last change") : null))))) : empty("No readings yet."));
+  }
+  current.timer = setInterval(poll, 500);
+  poll();
+  return c;
+}
+
 views.settings = async alive => {
   const view = $("view"), msg = h("div", {hidden: true});
   const note = (text, cls) => { msg.hidden = false; msg.className = cls; msg.textContent = text; if (cls === "okbox") setTimeout(() => { msg.hidden = true; }, 2500); };
@@ -500,6 +538,7 @@ views.settings = async alive => {
     group("Pass input", "simulator", [
       ["off", "Sensor", "The physical pass and hall sensor control the pass", icon("🧲 Sensor")],
       ["on", "Simulator", "For testing: the kiosk shows Take pass / Return pass buttons and the sensor is ignored", icon("🖱 Simulator")]], simNote),
+    sensorCard(alive),
     group("Countdown style", "bar_style", [
       ["thick", "Thick bar", "Large digits with a thick progress bar beneath", h("div", {class: "prev"}, h("div", {class: "d"}, "4:32"), h("div", {class: "b"}, h("i")))],
       ["pill", "Pill", "One large pill with the time inside the bar", h("div", {class: "prev"}, h("div", {class: "p"}, h("i"), h("span", null, "4:32")))]]),

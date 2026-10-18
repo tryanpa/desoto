@@ -161,3 +161,22 @@ def test_switching_to_sensor_catches_up_with_it(env):
     assert state.out
     c.put("/api/admin/settings", json={"simulator": "off"})
     assert state.out is None and state.docked
+
+
+def test_sensor_test_endpoints(env):
+    c, state, _ = env()
+    r = c.get("/api/admin/sensor").json()
+    assert r["configured"] is False and r["docked"] is None and r["events"] == []
+    state.sensor_configured = True
+    mon = c.app.state.monitor
+    mon.record(True); mon.record(False)
+    r = c.get("/api/admin/sensor").json()
+    assert r["configured"] and r["simulator"] and r["docked"] is False and r["changes"] == 1 and len(r["events"]) == 2
+    assert c.post("/api/admin/sensor/reset").status_code == 200
+    assert c.get("/api/admin/sensor").json()["events"] == []
+
+
+def test_sensor_test_needs_the_pin(env):
+    c, _, _ = env("1234")
+    assert c.get("/api/admin/sensor").status_code == 401
+    assert c.post("/api/admin/sensor/reset").status_code == 401

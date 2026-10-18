@@ -113,6 +113,12 @@ The pin is read with its internal pull-up, so **docked = pin pulled to ground**.
   (pin 11). The Pi's pull-up lifts the output to 3.3 V, which is safe for the pin. It needs 4.5 V or more to run, so don't
   power it from 3.3 V.
 
+**Sensor test:** admin **Settings → Sensor test** shows the sensor's live reading (docked / out), a count of changes,
+the shortest gap between changes and a list of recent readings. Lift and replace the pass a few times: each lift and
+each return should add exactly one row. Rows closer than half a second are flagged as flicker. It works on the Pi that
+has the sensor and keeps recording even while the simulator is on. (Changes shorter than 0.1 s are filtered out before
+they get here.)
+
 The Pi 400's header is on the back and unlabeled, so verify pin positions with a Pi 400 pin chart or by running
 `pinout` before connecting wires. Then turn the simulator off in the admin **Settings** (a fresh install with a sensor
 configured already starts on Sensor).

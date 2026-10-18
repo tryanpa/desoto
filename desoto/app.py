@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from . import roster as rosterlib
 from . import stats
 from .db import TripLog
+from .sensor import SensorMonitor
 from .state import DEFAULT_DURATION, PassState
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,7 +80,11 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
             except Exception:
                 clients.discard(ws)
 
+    monitor = SensorMonitor()
+    app.state.monitor = monitor
+
     def on_sensor(docked: bool) -> None:
+        monitor.record(docked)  # the Sensor test sees every reading, even while the simulator is on
         if state.from_sensor(docked):
             asyncio.ensure_future(broadcast())
 
@@ -184,6 +189,15 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
             settings_path.write_text(json.dumps(state.settings))
         await broadcast()
         return state.settings
+
+    @admin.get("/sensor")
+    def get_sensor():
+        return {"configured": state.sensor_configured, "simulator": state.simulator_on, **monitor.snapshot()}
+
+    @admin.post("/sensor/reset")
+    def reset_sensor():
+        monitor.reset()
+        return {"ok": True}
 
     @admin.post("/queue/clear")
     async def clear_queue():

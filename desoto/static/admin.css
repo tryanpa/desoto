@@ -85,3 +85,8 @@ table.t{width:100%;border-collapse:collapse}
 .tip .tr i{width:10px;height:3px;border-radius:2px}
 .bar-in{display:inline-block;height:8px;border-radius:0 4px 4px 0;background:var(--blue);vertical-align:middle;margin-left:8px;min-width:2px}
 @media (max-width:900px){.shell{grid-template-columns:1fr}nav{flex-direction:row;overflow-x:auto;padding:8px}nav .sp,nav .note,nav label.chk{display:none}#view{padding:20px 16px}.charts{grid-template-columns:1fr}.opts{grid-template-columns:1fr}}
+
+.sensor-status{padding:18px 22px;border-radius:12px;border:2px solid var(--border);font-weight:900;font-size:1.3rem;letter-spacing:.1em;text-transform:uppercase;margin-bottom:16px;line-height:1.3}
+.sensor-status.docked{border-color:var(--green);color:var(--green);background:var(--green-bg)}
+.sensor-status.undocked{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
+.sensor-status.none{color:var(--muted);text-transform:none;font-weight:700}

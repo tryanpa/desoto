@@ -54,3 +54,19 @@ def test_compute():
     assert by_name["Zed"]["trips"] == 0  # roster members with no trips are listed
     assert sum(by_name["Ava"]["weekly"]) == 2 and len(s["week_starts"]) == 12
     assert "Unqueued" not in by_name
+
+
+def test_sensor_monitor():
+    from desoto.sensor import SensorMonitor
+    t = [100.0]
+    m = SensorMonitor(maxlen=3, clock=lambda: t[0])
+    assert m.snapshot()["docked"] is None and m.snapshot()["events"] == []
+    m.record(True)                                   # starting state, not a change
+    t[0] += 2.0; m.record(False)
+    t[0] += 0.25; m.record(True)                     # a quick flicker
+    t[0] += 5.0; m.record(False)
+    s = m.snapshot()
+    assert s["docked"] is False and s["changes"] == 3 and abs(s["min_gap"] - 0.25) < 1e-9
+    assert len(s["events"]) == 3 and s["events"][0]["docked"] is False  # newest first, capped at maxlen
+    m.reset()
+    assert m.snapshot() == {"docked": None, "changes": 0, "min_gap": None, "events": []}
