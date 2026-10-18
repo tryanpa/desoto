@@ -2,31 +2,25 @@
 <title>Desoto Kiosk</title>
 <link rel="stylesheet" href="theme.css">
 <style>
- h1{margin:0;text-align:center;font-weight:900;font-size:clamp(2.4rem,6vw,4.6rem);line-height:1.05}
- .sub{color:var(--muted);font-weight:700;letter-spacing:.04em;margin-top:12px;text-align:center}
- .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:1100px}
- .grid.names{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));width:min(1400px,100%);max-width:none;gap:8px}
- .tile{min-width:150px;padding:18px 16px;font-size:.95rem}
- .tile.period{min-width:170px;padding:34px 20px;font-size:1.5rem}
- /* Names screen is for fingers: tall tiles that use the free height, names may wrap to two lines. */
- .compact .tile{min-width:0;height:clamp(52px,9.5vh,92px);padding:6px 10px;font-family:var(--head);font-weight:700;font-size:clamp(1rem,2.2vh,1.25rem);line-height:1.15;
-  display:flex;align-items:center;justify-content:center;text-align:center;overflow-wrap:anywhere}
- .compact .grid.names{gap:12px}
+ main{justify-content:flex-start;align-items:stretch;padding:14px 20px 16px;gap:14px;overflow:hidden}
+ .head{display:flex;align-items:center;gap:18px;flex:none}
+ h1{margin:0;font-weight:900;font-size:clamp(1.5rem,2.6vw,2.2rem);line-height:1.1}
  #back{min-height:52px;padding:0 22px}
- .compact h1{font-size:clamp(1.5rem,3vw,2.4rem)}.compact .sub{display:none}
- .head{display:flex;align-items:center;gap:24px}
- @media (max-height:700px){.tile.period{padding:20px 16px}}
+ /* The tile grid fills all the space under the title. layout() picks columns/rows and sizes. */
+ #main{flex:1;min-height:0;width:100%;display:grid;gap:12px;align-content:center;overflow-y:auto;scrollbar-width:none}
+ .tile{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-width:0;padding:4px 10px;
+  font-family:var(--head);font-weight:700;font-size:var(--fs,1rem);line-height:1.15;overflow-wrap:anywhere;border-radius:12px}
  .tile:active{transform:scale(.97)}
- .box{display:flex;flex-direction:column;align-items:center;gap:10px}
+ .tile .pl{font-size:var(--pl,1rem);font-weight:800;letter-spacing:.2em;text-transform:uppercase;opacity:.75}
+ .tile .pn{font-size:var(--pn,2rem);font-weight:900;line-height:1}
  .sim{display:flex;align-items:center;gap:10px}
  .sim .label{color:#444}
 </style>
 <div class="topbar"><div class="brand">Desoto<i>—</i>Kiosk</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
 <main>
- <div class="head"><button class="ghost" id="back" hidden onclick="show(null)">← Periods</button>
-  <div><h1 id="h1"></h1><div class="sub" id="sub"></div></div></div>
- <div class="box" style="width:100%"><div class="grid" id="main"></div></div>
+ <div class="head"><button class="ghost" id="back" hidden onclick="show(null)">← Periods</button><h1 id="h1"></h1></div>
+ <div id="main"></div>
 </main>
 <div class="footer"><span id="status">Waiting</span>
  <span class="sim" id="sim" hidden><span class="label">Simulator</span>
@@ -58,18 +52,48 @@ function leave(p, n) {
   post("/api/queue/" + encodeURIComponent(p) + "/" + encodeURIComponent(n), null, "DELETE").then(() => { say(`${n} removed from line`); show(null); });
 }
 
+// Choose columns/rows so the tiles are as big as possible for the space (and the number of tiles),
+// then size the text from the tile size. Tiles never get smaller than 52px tall: past that it scrolls.
+function layout() {
+  const g = $("main"), n = g.children.length;
+  if (!n) return;
+  const gap = 12, W = g.clientWidth, H = g.clientHeight, minH = 52, maxH = period ? 150 : 240;
+  let best = null;
+  for (let c = 1; c <= n; c++) {
+    const r = Math.ceil(n / c), tw = (W - gap * (c - 1)) / c, raw = (H - gap * (r - 1)) / r, th = Math.min(maxH, Math.max(minH, raw));
+    if (tw < 90) continue;
+    // Score = the smaller side of the tile (names are happy being 1.5x wider than tall, period tiles want squares),
+    // reduced when the last row is mostly empty. Ties go to more columns.
+    const fits = raw >= minH, wide = period ? 1.5 : 1;
+    const score = (fits ? 1 : 0.01) * Math.min(tw / wide, th) * (0.5 + 0.5 * n / (c * r));
+    if (!best || score >= best.score) best = {c, r, tw, th, score};
+  }
+  if (!best) best = {c: 1, r: n, tw: W, th: minH};
+  g.style.gridTemplateColumns = `repeat(${best.c}, minmax(0, 1fr))`;
+  g.style.gridTemplateRows = `repeat(${best.r}, ${best.th}px)`;
+  if (period) {
+    const longest = Math.max(...S.roster[period].map(x => Math.max(...x.split(/\s+/).map(w => w.length))), 4);
+    g.style.setProperty("--fs", Math.max(14, Math.min(best.th * 0.3, (best.tw - 28) / (longest * 0.66), 38)) + "px");
+  } else {
+    const len = Math.max(...Object.keys(S.roster).map(p => p.length), 1);
+    g.style.setProperty("--pn", Math.max(28, Math.min(best.th * 0.5, (best.tw - 24) / (len * 0.7), 120)) + "px");
+    g.style.setProperty("--pl", Math.max(12, Math.min(best.th * 0.14, 24)) + "px");
+  }
+}
+window.addEventListener("resize", () => { if (S) layout(); });
+if (document.fonts) document.fonts.ready.then(() => { if (S) layout(); });
+
 function render() {
   if (!S) return;
   const key = JSON.stringify([S.queue, S.out, S.roster, period]);
   if (key === last) return; last = key;
   $("back").hidden = !period;
-  document.body.classList.toggle("compact", !!period);
-  $("main").className = "grid" + (period ? " names" : "");
   if (!period) {
-    $("h1").replaceChildren("Tap Your", document.createElement("br"), Object.assign(el("span", "green", "Class Period")));
-    $("sub").textContent = "Then tap your name";
+    $("h1").replaceChildren("Tap Your ", el("span", "green", "Class Period"));
     $("main").replaceChildren(...Object.keys(S.roster).map(p => {
-      const b = el("button", "tile period", "Period " + p); b.onclick = () => show(p); return b; }));
+      const b = el("button", "tile");
+      b.append(el("span", "pl", "Period"), el("span", "pn", p));
+      b.onclick = () => show(p); return b; }));
   } else {
     $("h1").replaceChildren("Period " + period + " — ", el("span", "green", "Tap Your Name"));
     $("main").replaceChildren(...S.roster[period].map(n => {
@@ -78,6 +102,7 @@ function render() {
       const b = el("button", "tile" + (queued ? " queued" : ""), queued ? `#${pos} · ${n}` : n);
       b.onclick = () => queued ? leave(period, n) : join(period, n); return b; }));
   }
+  layout();
 }
 if (location.hash.length > 1) show(decodeURIComponent(location.hash.slice(1)));  // e.g. /#3 opens period 3
 connect((s, left) => {
