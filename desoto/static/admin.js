@@ -474,14 +474,23 @@ views.settings = async alive => {
   // One card of mutually exclusive options. options: [key, title, subtitle, preview?]
   function group(title, field, options, extra) {
     const opts = h("div", {class: "opts"}), c = card(title);
-    options.forEach(([v, t, sub, prev]) => opts.append(h("button", {class: "opt", type: "button", "data-v": v, onclick: async () => {
-      try { await api("/api/admin/settings", {method: "PUT", body: {[field]: v}}); note("Saved", "okbox"); }
-      catch (e) { note(errText(e), "errbox"); }
-    }}, prev, h("b", null, t), h("small", null, sub))));
+    options.forEach(([v, t, sub, prev]) => {
+      const choose = async () => {
+        if (el.classList.contains("disabled")) return;
+        try { await api("/api/admin/settings", {method: "PUT", body: {[field]: v}}); note("Saved", "okbox"); }
+        catch (e) { note(errText(e), "errbox"); }
+      };
+      // A div (not a button): buttons don't lay out their contents reliably in every browser.
+      const el = h("div", {class: "opt", role: "radio", tabindex: "0", "data-v": v, onclick: choose,
+        onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); } }},
+        prev, h("b", null, t), h("small", null, sub));
+      opts.append(el);
+    });
     c.append(opts); if (extra) c.append(extra);
     groups.push(s => opts.querySelectorAll(".opt").forEach(o => {
-      o.classList.toggle("on", o.dataset.v === s.settings[field]);
-      if (field === "simulator" && o.dataset.v === "off") { o.disabled = !s.sensor; o.style.opacity = s.sensor ? "" : ".45"; }
+      const on = o.dataset.v === s.settings[field];
+      o.classList.toggle("on", on); o.setAttribute("aria-checked", on);
+      if (field === "simulator" && o.dataset.v === "off") { o.classList.toggle("disabled", !s.sensor); o.setAttribute("aria-disabled", !s.sensor); }
     }));
     return c;
   }
