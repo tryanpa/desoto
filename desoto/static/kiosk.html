@@ -5,13 +5,17 @@
  h1{margin:0;text-align:center;font-weight:900;font-size:clamp(2.4rem,6vw,4.6rem);line-height:1.05}
  .sub{color:var(--muted);font-weight:700;letter-spacing:.04em;margin-top:12px;text-align:center}
  .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;max-width:1100px}
- .grid.names{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));width:min(1400px,100%);max-width:none;gap:8px}
+ .grid.names{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));width:min(1400px,100%);max-width:none;gap:8px}
  .tile{min-width:150px;padding:18px 16px;font-size:.95rem}
  .tile.period{min-width:170px;padding:34px 20px;font-size:1.5rem}
- .compact .tile{min-width:0;padding:12px 8px;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ /* Names screen is for fingers: tall tiles that use the free height, names may wrap to two lines. */
+ .compact .tile{min-width:0;height:clamp(52px,9.5vh,92px);padding:6px 10px;font-family:var(--head);font-weight:700;font-size:clamp(1rem,2.2vh,1.25rem);line-height:1.15;
+  display:flex;align-items:center;justify-content:center;text-align:center;overflow-wrap:anywhere}
+ .compact .grid.names{gap:12px}
+ #back{min-height:52px;padding:0 22px}
  .compact h1{font-size:clamp(1.5rem,3vw,2.4rem)}.compact .sub{display:none}
  .head{display:flex;align-items:center;gap:24px}
- @media (max-height:700px){.compact .tile{padding:8px 6px;font-size:.85rem}.tile.period{padding:20px 16px}}
+ @media (max-height:700px){.tile.period{padding:20px 16px}}
  .tile:active{transform:scale(.97)}
  .box{display:flex;flex-direction:column;align-items:center;gap:10px}
  .sim{display:flex;align-items:center;gap:10px}
