@@ -7,8 +7,13 @@
  .who{font-weight:900;font-size:clamp(2.6rem,7vw,6rem);margin-top:8px}
  .count{font-family:var(--mono);font-weight:700;font-size:clamp(6rem,20vw,16rem);line-height:1;letter-spacing:.04em}
  .over{animation:blink 1s infinite}@keyframes blink{50%{opacity:.35}}
- .bar{width:min(900px,60vw);height:10px;background:var(--panel2);border-radius:6px;overflow:hidden;margin:0 auto}
- .bar>div{height:100%;background:var(--green);transition:width .25s linear}
+ .bar{position:relative;width:min(900px,60vw);height:36px;background:var(--panel2);border-radius:18px;overflow:hidden;margin:0 auto}
+ .bar>div{height:100%;background:var(--green);transition:width .25s linear,background .25s}
+ .bar .t{display:none}
+ /* ?bar=pill: big pill with the time inside; the large digits above are hidden */
+ .pill-bar .count{display:none}
+ .pill-bar .bar{height:clamp(90px,16vh,150px);border-radius:999px;width:min(1000px,62vw);margin-top:28px;border:1px solid var(--border)}
+ .pill-bar .bar .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:800;font-size:clamp(3rem,9vw,7.5rem);letter-spacing:.06em;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.45)}
  aside{background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
  aside .head{display:flex;justify-content:space-between;align-items:center;padding:22px 24px;border-bottom:1px solid var(--border)}
  aside .n{font-family:var(--mono);color:var(--green);font-weight:700}
@@ -29,7 +34,7 @@
 <div class="layout">
  <main>
   <div><div class="label" id="oLabel">Pass</div><div class="who" id="out"></div><div class="label" id="oPeriod"></div>
-  <div class="count" id="count"></div><div class="bar"><div id="fill"></div></div></div>
+  <div class="count" id="count"></div><div class="bar" id="bar"><div id="fill"></div><span class="t" id="pt"></span></div></div>
  </main>
  <aside><div class="head"><div class="label">Queue</div><div class="n" id="qn"></div></div><div id="list"></div></aside>
 </div>
@@ -37,6 +42,7 @@
 <script src="common.js"></script>
 <script>
 startClock($("clock"));
+if (new URLSearchParams(location.search).get("bar") === "pill") document.body.classList.add("pill-bar");
 let lastQ = "";
 const mk = (tag, cls, text) => Object.assign(document.createElement(tag), {className: cls, textContent: text});
 function renderQueue(q) {
@@ -55,14 +61,17 @@ connect((s, left) => {
     $("oLabel").textContent = "Out now"; $("out").textContent = s.out.student;
     $("oPeriod").textContent = s.out.period ? "Period " + s.out.period : "";
     $("count").textContent = fmt(left); $("count").className = "count " + tone(left);
-    const pct = Math.max(0, Math.min(100, left / s.duration * 100));
+    // Over time the bar fills solid red and blinks (an empty bar would hide the colour).
+    const pct = left < 0 ? 100 : Math.min(100, left / s.duration * 100);
     $("fill").style.width = pct + "%";
+    $("bar").classList.toggle("over", left < 0); $("pt").textContent = fmt(left);
     $("fill").style.background = left < 0 ? "var(--red)" : left < 120 ? "var(--amber)" : "var(--green)";
     $("status").textContent = left < 0 ? `Over time — ${s.out.student}` : `${s.out.student} is out`;
   } else {
     $("oLabel").textContent = "Pass"; $("out").textContent = "Available"; $("oPeriod").textContent = "";
     $("count").textContent = "✓"; $("count").className = "count green";
     $("fill").style.width = "100%"; $("fill").style.background = "var(--green)";
+    $("bar").classList.remove("over"); $("pt").textContent = "✓";
     $("status").textContent = "Waiting — pass available";
   }
 });
