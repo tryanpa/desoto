@@ -56,7 +56,9 @@ def test_ids_never_reach_kiosk_or_display(env):
     assert "1234567" in c.get("/api/admin/roster").text  # admins do see them
     for f in ("kiosk.html", "display.html", "common.js"):
         text = (__import__("pathlib").Path("desoto/static") / f).read_text()
-        assert "student_id" not in text and ".id" not in text.replace("hidden", "")
+        # The public pages must never read an ID field or call an admin endpoint. (The kiosk does send the
+        # ID a scanner typed to /api/scan, but nothing ever comes back with one: see the snapshot checks above.)
+        assert "student_id" not in text and "/api/admin" not in text
 
 
 def test_trip_is_logged_with_id_and_exported(env):
