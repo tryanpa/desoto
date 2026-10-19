@@ -147,3 +147,12 @@ def test_old_log_gets_the_method_column(tmp_path):
     db.commit(); db.close()
     row = TripLog(p).query()[0][0]
     assert row["name"] == "Old" and row["method"] == "tap"
+
+
+def test_hiding_test_controls_disables_the_simulator():
+    s, _ = make(scan=False)
+    assert s.from_simulator(False) and s.out is not None          # controls shown by default
+    s.return_pass()
+    assert s.set_setting("test_controls", "hide") and not s.set_setting("test_controls", "maybe")
+    assert not s.from_simulator(False) and s.out is None           # hidden = refused, even with the simulator on
+    assert s.snapshot()["settings"]["test_controls"] == "hide"

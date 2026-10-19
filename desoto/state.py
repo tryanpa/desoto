@@ -13,12 +13,13 @@ ON_OFF = ("on", "off")
 CHOICES = {
     "bar_style": BAR_STYLES,
     "simulator": ON_OFF,                          # pass input: simulator buttons instead of the sensor (tap mode)
+    "test_controls": ("show", "hide"),            # show the simulator / type-an-ID test controls (hide = also refused by the server)
     "identify": ("tap", "scan"),                  # how students identify themselves at the kiosk
     "scan_strict": ON_OFF,                        # kiosk ignores IDs typed by hand (scanners type very fast)
     "call_timeout": ("0", "30", "60", "120", "300"),   # seconds a called student has to scan; 0 = never skip
     "max_trip_minutes": ("10", "15", "30", "60"),      # a trip with no return scan is closed after this long
 }
-DEFAULTS = {"bar_style": "thick", "simulator": "on", "identify": "tap", "scan_strict": "on",
+DEFAULTS = {"bar_style": "thick", "simulator": "on", "test_controls": "show", "identify": "tap", "scan_strict": "on",
             "call_timeout": "60", "max_trip_minutes": "30"}
 MAX_UNKNOWN_SCANS = 20     # unrecognised scans per minute before scanning pauses (stops ID guessing)
 
@@ -169,8 +170,9 @@ class PassState:
         return True
 
     def from_simulator(self, docked: bool) -> bool:
-        """Simulator input (kiosk buttons). Ignored while the simulator is off, or in scan mode."""
-        if not self.simulator_on or self.scan_mode:
+        """Simulator input (kiosk buttons). Ignored while the simulator is off, the test controls are hidden,
+        or in scan mode."""
+        if not self.simulator_on or self.scan_mode or self.settings["test_controls"] != "show":
             return False
         self.set_docked(docked)
         return True

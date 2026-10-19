@@ -251,3 +251,24 @@ def test_new_admin_endpoints_need_the_pin(env):
                               ("delete", "/api/admin/queue/1/Ava Johnson", None)]:
         r = getattr(c, method)(url, **({"json": body} if body else {}))
         assert r.status_code == 401, url
+
+
+def test_test_controls_setting_gates_the_sim_endpoint(env):
+    c, state, p = env()
+    assert c.get("/api/state").json()["settings"]["test_controls"] == "show"
+    assert c.put("/api/admin/settings", json={"test_controls": "hide"}).status_code == 200
+    assert c.post("/api/sim/docked", json={"docked": False}).status_code == 403 and state.out is None
+    assert json.loads(p["settings_path"].read_text())["test_controls"] == "hide"
+    assert c.put("/api/admin/settings", json={"test_controls": "show"}).status_code == 200
+    assert c.post("/api/sim/docked", json={"docked": False}).status_code == 200
+    assert c.put("/api/admin/settings", json={"test_controls": "x"}).status_code == 422
+
+
+def test_fresh_install_with_a_sensor_hides_test_controls(monkeypatch, tmp_path):
+    monkeypatch.setenv("DESOTO_DATA", str(tmp_path))
+    monkeypatch.setenv("DESOTO_GPIO_PIN", "17")
+    settings = TestClient(create_app()).get("/api/state").json()["settings"]
+    assert settings["test_controls"] == "hide" and settings["simulator"] == "off"
+    monkeypatch.delenv("DESOTO_GPIO_PIN")
+    monkeypatch.setenv("DESOTO_DATA", str(tmp_path / "other"))
+    assert TestClient(create_app()).get("/api/state").json()["settings"]["test_controls"] == "show"   # a laptop keeps them

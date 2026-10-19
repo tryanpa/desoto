@@ -181,8 +181,9 @@ function render() {
 if (location.hash.length > 1) show(decodeURIComponent(location.hash.slice(1)));  // e.g. /#3 opens period 3
 connect((s, left) => {
   S = s; leftNow = left; setPill(s);
-  const sim = s.settings.simulator === "on";
-  $("sim").hidden = !sim || scanMode(); $("scanTest").hidden = !sim || !scanMode();
+  const controls = s.settings.test_controls === "show";   // Settings -> Simulator and test controls
+  $("sim").hidden = !(controls && s.settings.simulator === "on" && !scanMode());   // Take pass / Return pass (tap mode)
+  $("scanTest").hidden = !(controls && scanMode());                                // type-an-ID box (scan mode)
   if (scanMode()) renderScanStatus(left);
   $("status").textContent = flash ? flash : s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
   render();

@@ -88,6 +88,8 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         state.sensor_configured = bool(os.environ.get("DESOTO_GPIO_PIN"))
         if "simulator" not in saved and state.sensor_configured:
             state.set_setting("simulator", "off")  # a real install starts on the sensor
+        if "test_controls" not in saved and state.sensor_configured:
+            state.set_setting("test_controls", "hide")  # and starts with the test controls hidden
     admin_pin = os.environ.get("DESOTO_ADMIN_PIN")
 
     app = FastAPI(title="Desoto")
@@ -176,7 +178,7 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
     async def simulate(body: Docked):
         """Simulated sensor for development without hardware."""
         if not state.from_simulator(body.docked):
-            raise HTTPException(403, "The pass simulator is not available (turned off, or ID scan mode is on)")
+            raise HTTPException(403, "The simulator is not available (turned off, test controls hidden, or ID scan mode is on)")
         await broadcast()
         return state.snapshot()
 
@@ -227,6 +229,7 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
     class Setting(BaseModel):
         bar_style: Optional[str] = None
         simulator: Optional[str] = None
+        test_controls: Optional[str] = None
         identify: Optional[str] = None
         scan_strict: Optional[str] = None
         call_timeout: Optional[str] = None

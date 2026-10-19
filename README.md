@@ -43,7 +43,7 @@ the PIN-protected admin endpoints return them. In the admin pages IDs are masked
 - **Data**: totals, average / longest trip, over-time counts, trips per day, average length by day,
   time-of-day and per-period charts, and a sortable per-student table with a 12-week trend.
   Every chart has a **Table** view. Export per-student numbers to CSV.
-- **Settings**: **Student identification** (tap names or scan ID cards), **Pass input** (Sensor or Simulator) and countdown style (thick bar or pill), applied live.
+- **Settings**: **Student identification** (tap names or scan ID cards), **Pass input** (Sensor or Simulator), **Simulator and test controls** (Show or Hide) and countdown style (thick bar or pill), applied live.
   Simulator on = the kiosk shows Take pass / Return pass buttons and the real sensor is ignored; off = the
   sensor controls the pass and the buttons disappear. Switching back to Sensor catches up with where the pass
   really is. A computer with no sensor configured can't turn the simulator off. When `DESOTO_GPIO_PIN` is set,
@@ -100,7 +100,7 @@ the student identified: **Scan**, **Tap** or **Teacher**.
 **Scanner:** any USB barcode/QR scanner that works like a keyboard (it types the ID, then Enter) works; use a 2D scanner
 for QR codes. If a QR code holds more than the number (for example a web address), Desoto accepts it as long as it contains
 exactly one known student ID. Keep the Pi's keyboard layout on US, since scanners send US key codes. To test with no scanner,
-turn the **simulator** on (Settings → Pass input): the kiosk footer then shows a box where you can type an ID.
+set **Simulator and test controls** to **Show**: the kiosk footer then has a box where you can type an ID.
 
 What scanning does and doesn't prove: it shows someone has the card, not that they are the student. Cards can be lent or a
 barcode photographed, so it is better than tapping a name, not perfect. A student listed in more than one period is
@@ -144,6 +144,10 @@ The pin is read with its internal pull-up, so **docked = pin pulled to ground**.
 - **Hall sensor, e.g. A3144 (open collector):** VCC to 5 V (pin 2), GND to ground (pin 9), output to GPIO 17
   (pin 11). The Pi's pull-up lifts the output to 3.3 V, which is safe for the pin. It needs 4.5 V or more to run, so don't
   power it from 3.3 V.
+
+**Simulator and test controls:** set to **Hide** for the real classroom: the kiosk shows no Take pass / Return pass buttons or
+type-an-ID box, and the server refuses simulator requests. **Show** is for testing. A fresh install on a Pi with a sensor starts
+on Sensor with the controls hidden; a laptop starts with them shown.
 
 **Sensor test:** admin **Settings → Sensor test** shows the sensor's live reading (docked / out), a count of changes,
 the shortest gap between changes and a list of recent readings. Lift and replace the pass a few times: each lift and

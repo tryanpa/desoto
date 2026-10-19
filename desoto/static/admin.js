@@ -577,12 +577,15 @@ views.settings = async alive => {
       "Keeps the pass from being stuck out if a student forgets to scan back. The trip is kept in the log as \"No return logged\".")));
   const passCard = group("Pass input", "simulator", [
       ["off", "Sensor", "The physical pass and hall sensor control the pass", icon("🧲 Sensor")],
-      ["on", "Simulator", "For testing: the kiosk shows Take pass / Return pass buttons and the sensor is ignored", icon("🖱 Simulator")]], simNote);
+      ["on", "Simulator", "For testing: the sensor is ignored and the pass is controlled with the Take pass / Return pass test buttons (see Simulator and test controls)", icon("🖱 Simulator")]], simNote);
   view.append(h("h2", null, "Settings"), h("div", {class: "lead"}, "Changes apply to the kiosk and hallway display immediately"),
     group("Student identification", "identify", [
       ["tap", "Tap names", "Students tap their class period, then their name, and the physical pass (or simulator) starts the timer", icon("👆 Tap")],
       ["scan", "Scan ID card", "Students scan their ID card to join the line, start their trip and end it. No sensor or physical pass is needed", icon("▩ Scan")]]),
     scanCard, passCard,
+    group("Simulator and test controls", "test_controls", [
+      ["hide", "Hide", "For the real classroom. The kiosk shows no test controls and the server refuses simulator requests", icon("🙈 Hidden")],
+      ["show", "Show", "For testing. The kiosk footer shows Take pass / Return pass (tap mode with the simulator on) or a type-an-ID box (scan mode)", icon("🧪 Shown")]]),
     sensorCard(alive),
     group("Countdown style", "bar_style", [
       ["thick", "Thick bar", "Large digits with a thick progress bar beneath", h("div", {class: "prev"}, h("div", {class: "d"}, "4:32"), h("div", {class: "b"}, h("i")))],
@@ -592,7 +595,7 @@ views.settings = async alive => {
     groups.forEach(g => g(s));
     const scanning = s.settings.identify === "scan";
     scanCard.hidden = !scanning; passCard.classList.toggle("dim", scanning);
-    simNote.textContent = s.settings.identify === "scan" ? "Not used while students scan ID cards: the scans replace the pass." : s.sensor ? "While the simulator is on, the real sensor is ignored. Switching back to Sensor takes over from wherever the pass is."
+    simNote.textContent = s.settings.identify === "scan" ? "Not used while students scan ID cards: the scans replace the pass." : s.settings.simulator === "on" && s.settings.test_controls === "hide" ? "The simulator is on, but its buttons are hidden (see Simulator and test controls below), so nothing can take the pass until you show them." : s.sensor ? "While the simulator is on, the real sensor is ignored. Switching back to Sensor takes over from wherever the pass is."
       : "No sensor is set up on this computer (start with DESOTO_GPIO_PIN), so the simulator is the only way to control the pass.";
   };
   if (latest) current.onState(latest);
