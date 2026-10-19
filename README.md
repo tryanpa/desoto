@@ -98,7 +98,9 @@ the student identified: **Scan**, **Tap** or **Teacher**.
 "Teacher". **Mark returned** ends a trip, and **Clear queue** / **Remove** work as before.
 
 **Scanner:** any USB barcode/QR scanner that works like a keyboard (it types the ID, then Enter) works; use a 2D scanner
-for QR codes. If a QR code holds more than the number (for example a web address), Desoto accepts it as long as it contains
+for QR codes. The kiosk only listens for scans while it is the open window in scan mode (the display and admin pages ignore them). It
+accepts a scan that ends in Enter or Tab, or with no ending at all (a short pause means the scan is finished).
+If a QR code holds more than the number (for example a web address), Desoto accepts it as long as it contains
 exactly one known student ID. Keep the Pi's keyboard layout on US, since scanners send US key codes. To test with no scanner,
 set **Simulator and test controls** to **Show**: the kiosk footer then has a box where you can type an ID.
 

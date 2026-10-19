@@ -59,7 +59,7 @@ let S = null, period = null, idle = null, last = "", leftNow = null;
 const scanMode = () => !!S && S.settings.identify === "scan";
 
 // ---- ID scan mode: a USB scanner types the ID and presses Enter, like a very fast keyboard.
-let wasScan = false, buf = "", times = [], lastCode = "", lastCodeAt = 0, msgTimer = null;
+let idleTimer = null, wasScan = false, buf = "", times = [], lastCode = "", lastCodeAt = 0, msgTimer = null;
 function showScan(res, status) {
   const ok = ["started", "returned"].includes(res.result);
   const cls = res.result === "returned" && res.over ? "warn" : ok ? "ok" : ["queued", "waiting"].includes(res.result) ? "info" : "bad";
@@ -76,9 +76,10 @@ function submitScan(code, typed) {
     .catch(() => showScan({result: "error", message: "Can't reach the pass server. Please see your teacher."}));
 }
 function finishScan() {
+  clearTimeout(idleTimer);
   const code = buf, ts = times; buf = ""; times = [];
   if (code.length < 3) return;
-  if (S.settings.scan_strict === "on" && ts.length >= 4 && (ts[ts.length - 1] - ts[0]) / (ts.length - 1) > 70) {
+  if (S.settings.scan_strict === "on" && ts.length >= 3 && (ts[ts.length - 1] - ts[0]) / (ts.length - 1) > 70) {
     showScan({result: "typed", message: "Please scan your card. Typing an ID is turned off."}); return;
   }
   submitScan(code);
@@ -93,6 +94,8 @@ document.addEventListener("keydown", e => {
   if (e.key.length !== 1) return;
   if (times.length && now - times[times.length - 1] > 400) { buf = ""; times = []; }   // an old, unfinished entry
   buf += e.key; times.push(now); e.preventDefault();
+  // Some scanners send no Enter after the ID: a short pause means the scan is finished.
+  clearTimeout(idleTimer); idleTimer = setTimeout(finishScan, 200);
 });
 function renderScanStatus(left) {
   let t = "";
