@@ -152,10 +152,28 @@ views.live = async alive => {
     try { const r = await api("/api/admin/queue/clear", {method: "POST"}); msg.textContent = `Cleared ${r.cleared}.`; setTimeout(() => msg.textContent = "", 3000); }
     catch (e) { msg.textContent = errText(e); }
   }, "danger sm");
+  // Teacher override: add (or start) a student by name, e.g. a forgotten or lost ID card.
+  const roster = await getRoster();
+  if (!alive()) return;
+  const pSel = h("select", {"aria-label": "Period"}, periodKeys(roster.roster).map(p => h("option", {value: p}, "Period " + p)));
+  const nSel = h("select", {"aria-label": "Student"}), addMsg = h("span", {class: "help"});
+  const fillNames = () => nSel.replaceChildren(...(roster.roster[pSel.value] || []).map(x => h("option", {value: x.name}, x.name)));
+  pSel.onchange = fillNames; fillNames();
+  const doAdd = async start => {
+    try {
+      await api("/api/admin/queue/add", {method: "POST", body: {period: pSel.value, student: nSel.value, start}});
+      addMsg.textContent = start ? `Started ${nSel.value}.` : `Added ${nSel.value}.`;
+    } catch (e) { addMsg.textContent = errText(e); }
+    setTimeout(() => { addMsg.textContent = ""; }, 4000);
+  };
+  const startBtn = btn("Start trip now", () => doAdd(true));
+  const addCard = card("Add a student by name", addMsg);
+  addCard.append(h("div", {class: "body"}, h("div", {class: "help", style: "margin-bottom:12px"}, "For a forgotten or lost ID card. These trips are logged as added by a teacher."),
+    h("div", {class: "row"}, pSel, nSel, btn("Add to queue", () => doAdd(false), "primary"), startBtn)));
   view.append(h("h2", null, "Live"), h("div", {class: "lead"}, "What the kiosk and hallway display are showing right now"),
     h("div", {class: "tiles"}, tWait.el, tOut.el, tOver.el, tToday.el),
     card("Currently out").appendChild(outBody).parentNode,
-    card("Queue", msg, clearBtn).appendChild(queueBody).parentNode);
+    card("Queue", msg, clearBtn).appendChild(queueBody).parentNode, addCard);
   let outKey = null, qKey = "", sinceCell = null, leftCell = null, todayKey = "init";
   async function refreshToday() {
     try {
@@ -180,15 +198,20 @@ views.live = async alive => {
       } else outBody.replaceChildren(empty("The pass is available."));
     }
     if (s.out && leftCell) { leftCell.textContent = left < 0 ? "+" + mmss(-left) : mmss(left); leftCell.style.color = left < 0 ? "var(--over)" : ""; }
-    const qk = JSON.stringify(s.queue);
+    const qk = JSON.stringify([s.queue, !!s.out, s.settings.identify]);
+    startBtn.disabled = !!s.out;
     if (qk !== qKey) {
       qKey = qk;
       clearBtn.disabled = !s.queue.length;
       queueBody.replaceChildren(s.queue.length ? table([{label: "#", num: true}, {label: "Student"}, {label: "Period"}, {label: ""}],
         s.queue.map((q, i) => h("tr", null, h("td", {class: "num mono"}, i + 1), h("td", {class: "name"}, q.student), h("td", null, "Period " + q.period),
-          h("td", {class: "num"}, btn("Remove", async () => {
-            try { await fetch(`/api/queue/${encodeURIComponent(q.period)}/${encodeURIComponent(q.student)}`, {method: "DELETE"}); } catch (e) { /* ws refreshes */ }
-          }, "sm"))))) : empty("Nobody is waiting."));
+          h("td", {class: "num"},
+            s.settings.identify === "scan" && !s.out ? [btn("Start now", async () => {
+              try { await api("/api/admin/queue/start", {method: "POST", body: {period: q.period, student: q.student}}); } catch (e) { alert(errText(e)); }
+            }, "sm primary"), " "] : null,
+            btn("Remove", async () => {
+              try { await api(`/api/admin/queue/${encodeURIComponent(q.period)}/${encodeURIComponent(q.student)}`, {method: "DELETE"}); } catch (e) { alert(errText(e)); }
+            }, "sm"))))) : empty("Nobody is waiting."));
     }
     const tk = s.out ? s.out.started_at : "idle";
     if (tk !== todayKey) { todayKey = tk; refreshToday(); }
@@ -323,17 +346,18 @@ views.activity = async alive => {
   }
   function draw() {
     body.replaceChildren(rows.length ? h("div", {class: "scroll"}, table(
-      [{label: "Date"}, {label: "Student"}, {label: "Period"}, {label: "ID"}, {label: "Out"}, {label: "In"}, {label: "Time", num: true}, {label: "Result"}],
+      [{label: "Date"}, {label: "Student"}, {label: "Period"}, {label: "ID"}, {label: "Out"}, {label: "In"}, {label: "Time", num: true}, {label: "How"}, {label: "Result"}],
       rows.map(r => {
         let result;
         if (r.status === "out") result = badge("Out now", "out");
-        else if (r.status === "incomplete") result = badge("No return logged", "warn", "The server restarted before the pass came back");
+        else if (r.status === "incomplete") result = badge("No return logged", "warn", "No return was recorded: the server restarted, or the student never scanned back");
         else result = r.over ? badge("Over +" + mmss(r.seconds - r.allowed), "over") : badge("On time", "ok");
         return h("tr", null, h("td", {class: "mono"}, dstr(r.out_at)),
           h("td", {class: "name"}, r.unqueued ? h("span", {style: "color:var(--muted)"}, "Not queued") : r.name),
           h("td", null, r.period ? "Period " + r.period : "—"), h("td", {class: "mono"}, idText(r.student_id)),
           h("td", {class: "mono"}, tstr(r.out_at)), h("td", {class: "mono"}, tstr(r.in_at)),
           h("td", {class: "num"}, r.seconds == null ? "—" : mmss(r.seconds)),
+          h("td", null, r.unqueued ? "—" : r.method === "scan" ? badge("Scan", "ok", "Student scanned their ID card") : r.method === "teacher" ? badge("Teacher", "warn", "Added by a teacher") : badge("Tap", "", "Student tapped their name")),
           h("td", null, result, r.source === "manual" ? [" ", badge("Manual", "warn", "Marked returned by an admin")] : null));
       }))) : empty("No passes in this range."));
     const pages = Math.max(1, Math.ceil(total / PAGE));
@@ -534,10 +558,31 @@ views.settings = async alive => {
   }
   const icon = t => h("div", {class: "prev"}, h("div", {class: "d", style: "font-size:1.6rem"}, t));
   const simNote = h("div", {class: "body help"});
-  view.append(h("h2", null, "Settings"), h("div", {class: "lead"}, "Changes apply to the kiosk and hallway display immediately"),
-    group("Pass input", "simulator", [
+  // A labelled drop-down that saves on change.
+  function selectRow(label, field, options, hint) {
+    const sel = h("select", {"aria-label": label, onchange: async e => {
+      try { await api("/api/admin/settings", {method: "PUT", body: {[field]: e.target.value}}); note("Saved", "okbox"); }
+      catch (err) { note(errText(err), "errbox"); }
+    }}, options.map(([v, t]) => h("option", {value: v}, t)));
+    groups.push(st => { sel.value = st.settings[field]; });
+    return h("div", {class: "field", style: "margin-bottom:16px"}, h("span", null, label), sel, hint ? h("div", {class: "help"}, hint) : null);
+  }
+  const scanCard = card("ID scanning");
+  scanCard.append(h("div", {class: "body"},
+    selectRow("Time to scan when called", "call_timeout", [["30", "30 seconds"], ["60", "1 minute"], ["120", "2 minutes"], ["300", "5 minutes"], ["0", "Never skip"]],
+      "When the pass is free, the next student has this long to scan their ID. After that they are skipped and can scan again to rejoin at the back."),
+    selectRow("Typed IDs", "scan_strict", [["on", "Ignore IDs typed by hand (recommended)"], ["off", "Accept typed IDs"]],
+      "A scanner types a whole ID in a fraction of a second. With this on, the kiosk refuses anything typed at human speed."),
+    selectRow("Close a trip with no return scan after", "max_trip_minutes", [["10", "10 minutes"], ["15", "15 minutes"], ["30", "30 minutes"], ["60", "1 hour"]],
+      "Keeps the pass from being stuck out if a student forgets to scan back. The trip is kept in the log as \"No return logged\".")));
+  const passCard = group("Pass input", "simulator", [
       ["off", "Sensor", "The physical pass and hall sensor control the pass", icon("🧲 Sensor")],
-      ["on", "Simulator", "For testing: the kiosk shows Take pass / Return pass buttons and the sensor is ignored", icon("🖱 Simulator")]], simNote),
+      ["on", "Simulator", "For testing: the kiosk shows Take pass / Return pass buttons and the sensor is ignored", icon("🖱 Simulator")]], simNote);
+  view.append(h("h2", null, "Settings"), h("div", {class: "lead"}, "Changes apply to the kiosk and hallway display immediately"),
+    group("Student identification", "identify", [
+      ["tap", "Tap names", "Students tap their class period, then their name, and the physical pass (or simulator) starts the timer", icon("👆 Tap")],
+      ["scan", "Scan ID card", "Students scan their ID card to join the line, start their trip and end it. No sensor or physical pass is needed", icon("▩ Scan")]]),
+    scanCard, passCard,
     sensorCard(alive),
     group("Countdown style", "bar_style", [
       ["thick", "Thick bar", "Large digits with a thick progress bar beneath", h("div", {class: "prev"}, h("div", {class: "d"}, "4:32"), h("div", {class: "b"}, h("i")))],
@@ -545,7 +590,9 @@ views.settings = async alive => {
     msg);
   current.onState = s => {
     groups.forEach(g => g(s));
-    simNote.textContent = s.sensor ? "While the simulator is on, the real sensor is ignored. Switching back to Sensor takes over from wherever the pass is."
+    const scanning = s.settings.identify === "scan";
+    scanCard.hidden = !scanning; passCard.classList.toggle("dim", scanning);
+    simNote.textContent = s.settings.identify === "scan" ? "Not used while students scan ID cards: the scans replace the pass." : s.sensor ? "While the simulator is on, the real sensor is ignored. Switching back to Sensor takes over from wherever the pass is."
       : "No sensor is set up on this computer (start with DESOTO_GPIO_PIN), so the simulator is the only way to control the pass.";
   };
   if (latest) current.onState(latest);

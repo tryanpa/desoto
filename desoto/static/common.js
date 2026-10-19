@@ -5,7 +5,7 @@ function connect(onState) {
     ? state.duration - (Date.now() / 1000 + offset - state.out.started_at) : null;
   function open() {
     const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
-    ws.onmessage = e => { state = JSON.parse(e.data); offset = state.now - Date.now() / 1000; };
+    ws.onmessage = e => { state = JSON.parse(e.data); offset = state.now - Date.now() / 1000; window.srvOffset = offset; };
     ws.onclose = () => setTimeout(open, 1000);
   }
   open();

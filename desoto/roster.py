@@ -76,6 +76,7 @@ def parse_csv(text: str, default_period: str = "") -> Tuple[Roster, List[str], L
     warnings: List[str] = []
     roster: Roster = {}
     seen_ids = set()
+    id_names: Dict[str, str] = {}
     names_in_period: Dict[str, Dict[str, int]] = {}
     get = lambda row, i: row[i] if i is not None and i < len(row) else ""
     for n, row in enumerate(rows[1:], start=2):
@@ -101,6 +102,8 @@ def parse_csv(text: str, default_period: str = "") -> Tuple[Roster, List[str], L
             continue
         if sid:
             seen_ids.add((period, sid))
+            if id_names.setdefault(sid, name) != name:
+                warnings.append(f"Row {n}: ID {sid} is also used by {id_names[sid]}. Scanning it would pick the first one.")
         counts = names_in_period.setdefault(period, {})
         counts[name] = counts.get(name, 0) + 1
         if counts[name] > 1:

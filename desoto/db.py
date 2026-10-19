@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS trips(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   period TEXT NOT NULL, name TEXT NOT NULL, student_id TEXT NOT NULL DEFAULT '',
   out_at REAL NOT NULL, in_at REAL, allowed INTEGER NOT NULL,
-  source TEXT NOT NULL DEFAULT 'sensor', incomplete INTEGER NOT NULL DEFAULT 0);
+  source TEXT NOT NULL DEFAULT 'sensor', incomplete INTEGER NOT NULL DEFAULT 0,
+  method TEXT NOT NULL DEFAULT 'tap');
 CREATE INDEX IF NOT EXISTS trips_out ON trips(out_at);
 """
 
@@ -46,21 +47,31 @@ class TripLog:
         self.lock = threading.Lock()
         with self.lock:
             self.db.executescript(SCHEMA)
+            if "method" not in [r["name"] for r in self.db.execute("PRAGMA table_info(trips)")]:
+                # older log: add the column that says how the student identified (tap / scan / teacher)
+                self.db.execute("ALTER TABLE trips ADD COLUMN method TEXT NOT NULL DEFAULT 'tap'")
             # A trip still open at startup lost its return event (restart or crash).
             self.db.execute("UPDATE trips SET incomplete=1 WHERE in_at IS NULL")
             self.db.commit()
 
-    def open_trip(self, period: str, name: str, student_id: str, out_at: float, allowed: int) -> int:
+    def open_trip(self, period: str, name: str, student_id: str, out_at: float, allowed: int,
+                  method: str = "tap") -> int:
         with self.lock:
             cur = self.db.execute(
-                "INSERT INTO trips(period,name,student_id,out_at,allowed) VALUES(?,?,?,?,?)",
-                (period, name, student_id, out_at, allowed))
+                "INSERT INTO trips(period,name,student_id,out_at,allowed,method) VALUES(?,?,?,?,?,?)",
+                (period, name, student_id, out_at, allowed, method))
             self.db.commit()
             return cur.lastrowid
 
     def close_trip(self, trip_id: int, in_at: float, source: str = "sensor") -> None:
         with self.lock:
             self.db.execute("UPDATE trips SET in_at=?, source=? WHERE id=?", (in_at, source, trip_id))
+            self.db.commit()
+
+    def abandon_trip(self, trip_id: int) -> None:
+        """A trip that never got a return: keep the row, but mark it incomplete so it is left out of statistics."""
+        with self.lock:
+            self.db.execute("UPDATE trips SET incomplete=1 WHERE id=? AND in_at IS NULL", (trip_id,))
             self.db.commit()
 
     def _where(self, start, end, period, q):

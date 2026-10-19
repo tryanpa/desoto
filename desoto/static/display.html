@@ -69,6 +69,14 @@ connect((s, left) => {
     $("bar").classList.toggle("over", left < 0); $("pt").textContent = fmt(left);
     $("fill").style.background = left < 0 ? "var(--red)" : left < 120 ? "var(--amber)" : "var(--green)";
     $("status").textContent = left < 0 ? `Over time — ${s.out.student}` : `${s.out.student} is out`;
+  } else if (s.called) {
+    // Scan mode: the pass is free and this student has been called. They scan their ID to start.
+    const c = s.called, rem = c.expires_at ? Math.max(0, c.expires_at - (Date.now() / 1000 + (window.srvOffset || 0))) : null;
+    $("oLabel").textContent = "Your turn"; $("out").textContent = c.student; $("oSub").textContent = "Scan your ID to start";
+    $("count").textContent = rem == null ? "" : fmt(rem); $("count").className = "count " + (rem != null && rem < 15 ? "amber" : "green");
+    $("fill").style.width = (rem == null ? 100 : Math.min(100, rem / c.window * 100)) + "%"; $("fill").style.background = "var(--green)";
+    $("bar").classList.remove("over"); $("pt").textContent = rem == null ? "" : fmt(rem);
+    $("status").textContent = `${c.student}: scan your ID to start`;
   } else {
     $("oLabel").textContent = "Pass"; $("out").textContent = "Available"; $("oSub").textContent = "";
     $("count").textContent = "✓"; $("count").className = "count green";
@@ -76,5 +84,6 @@ connect((s, left) => {
     $("bar").classList.remove("over"); $("pt").textContent = "✓";
     $("status").textContent = "Waiting — pass available";
   }
+  if (s.notice) $("status").textContent = s.notice;
 });
 </script>

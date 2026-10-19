@@ -15,14 +15,38 @@
  .tile .pn{font-size:var(--pn,2rem);font-weight:900;line-height:1}
  .sim{display:flex;align-items:center;gap:10px}
  .sim .label{color:#444}
+ #tapview{display:flex;flex-direction:column;gap:14px;flex:1;min-height:0}
+ /* ID scan screen */
+ #scanview{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;text-align:center;min-height:0}
+ #scanview h1{font-size:clamp(2.4rem,6vw,4.6rem);line-height:1.05;text-align:center}
+ .ready{display:inline-flex;align-items:center;gap:14px;padding:16px 30px;border:2px solid var(--border);border-radius:16px;background:var(--panel);color:var(--muted);font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:1.05rem}
+ .ready i{font-style:normal;font-size:1.5rem}
+ #scanMsg{min-height:5.2rem;width:min(760px,92%);display:flex;align-items:center;justify-content:center;padding:16px 26px;border-radius:14px;font-weight:800;font-size:clamp(1.1rem,2.4vw,1.7rem);line-height:1.3;visibility:hidden;border:2px solid transparent}
+ #scanMsg.show{visibility:visible}
+ #scanMsg.ok{background:var(--green-bg);color:var(--green);border-color:#285c3b}
+ #scanMsg.info{background:#1d2b38;color:var(--blue);border-color:#2a4a66}
+ #scanMsg.warn{background:var(--amber-bg);color:var(--amber);border-color:#5a4516}
+ #scanMsg.bad{background:var(--red-bg);color:#ff8a7a;border-color:#5c2b27}
+ #scanNext{color:var(--ink2,#b8b8b8);font-weight:700;font-size:1.15rem;min-height:1.5em}
+ #scanTest{display:flex;align-items:center;gap:10px}#scanTest input{width:150px;padding:8px 10px}
 </style>
 <div class="topbar"><div class="brand">Desoto<i>—</i>Kiosk</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
 <main>
- <div class="head"><button class="ghost" id="back" hidden onclick="show(null)">← Periods</button><h1 id="h1"></h1></div>
- <div id="main"></div>
+ <div id="tapview">
+  <div class="head"><button class="ghost" id="back" hidden onclick="show(null)">← Periods</button><h1 id="h1"></h1></div>
+  <div id="main"></div>
+ </div>
+ <div id="scanview" hidden>
+  <h1>Scan Your<br><span class="green">Student ID</span></h1>
+  <div class="ready"><i>▩</i> Ready to scan</div>
+  <div id="scanMsg" role="status" aria-live="polite"></div>
+  <div id="scanNext"></div>
+ </div>
 </main>
 <div class="footer"><span id="status">Waiting</span>
+ <span id="scanTest" hidden><span class="label" style="color:#444">Simulator</span>
+ <input id="testId" placeholder="Type an ID" autocomplete="off" inputmode="numeric"><button class="ghost" onclick="testScan()">Scan</button></span>
  <span class="sim" id="sim" hidden><span class="label">Simulator</span>
  <button class="ghost" onclick="sim(false)">Take pass</button><button class="ghost" onclick="sim(true)">Return pass</button></span></div>
 <script src="common.js"></script>
@@ -31,7 +55,54 @@ const post = (u, b, m = "POST") => fetch(u, {method: m, headers: {"Content-Type"
 const sim = d => post("/api/sim/docked", {docked: d});
 startClock($("clock"));
 
-let S = null, period = null, idle = null, last = "";
+let S = null, period = null, idle = null, last = "", leftNow = null;
+const scanMode = () => !!S && S.settings.identify === "scan";
+
+// ---- ID scan mode: a USB scanner types the ID and presses Enter, like a very fast keyboard.
+let wasScan = false, buf = "", times = [], lastCode = "", lastCodeAt = 0, msgTimer = null;
+function showScan(res, status) {
+  const ok = ["started", "returned"].includes(res.result);
+  const cls = res.result === "returned" && res.over ? "warn" : ok ? "ok" : ["queued", "waiting"].includes(res.result) ? "info" : "bad";
+  const m = $("scanMsg");
+  m.textContent = res.message || "Something went wrong. Please see your teacher.";
+  m.className = "show " + cls;
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => { m.className = ""; }, 7000);
+}
+function submitScan(code, typed) {
+  const now = Date.now();
+  if (code === lastCode && now - lastCodeAt < 1500) return;   // scanners often read a card twice
+  lastCode = code; lastCodeAt = now;
+  post("/api/scan", {id: code}).then(r => r.json().then(j => showScan(j, r.status)))
+    .catch(() => showScan({result: "error", message: "Can't reach the pass server. Please see your teacher."}));
+}
+function finishScan() {
+  const code = buf, ts = times; buf = ""; times = [];
+  if (code.length < 3) return;
+  if (S.settings.scan_strict === "on" && ts.length >= 4 && (ts[ts.length - 1] - ts[0]) / (ts.length - 1) > 70) {
+    showScan({result: "typed", message: "Please scan your card. Typing an ID is turned off."}); return;
+  }
+  submitScan(code);
+}
+function testScan() { const i = $("testId"); if (i.value.trim()) { submitScan(i.value.trim()); i.value = ""; } }
+document.addEventListener("keydown", e => {
+  if (!scanMode()) return;
+  if (e.target && e.target.id === "testId") { if (e.key === "Enter") { e.preventDefault(); testScan(); } return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const now = performance.now();
+  if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); finishScan(); return; }
+  if (e.key.length !== 1) return;
+  if (times.length && now - times[times.length - 1] > 400) { buf = ""; times = []; }   // an old, unfinished entry
+  buf += e.key; times.push(now); e.preventDefault();
+});
+function renderScanStatus(left) {
+  let t = "";
+  if (S.called) {
+    const rem = S.called.expires_at ? Math.max(0, S.called.expires_at - (Date.now() / 1000 + (window.srvOffset || 0))) : null;
+    t = `Next: ${S.called.student}. Scan your ID to start` + (rem == null ? "." : ` (${fmt(rem)})`);
+  } else if (S.out) t = `${S.out.student} is out (${fmt(left)}). ${S.queue.length ? S.queue.length + " waiting." : ""}`;
+  else if (S.queue.length) t = `${S.queue.length} waiting.`;
+  $("scanNext").textContent = t;
+}
 const same = (p, n, x) => x && x.period === p && x.student === n;
 const el = (tag, cls, text) => Object.assign(document.createElement(tag), {className: cls, textContent: text});
 
@@ -85,6 +156,9 @@ if (document.fonts) document.fonts.ready.then(() => { if (S) layout(); });
 
 function render() {
   if (!S) return;
+  $("tapview").hidden = scanMode(); $("scanview").hidden = !scanMode();
+  if (scanMode()) { wasScan = true; return; }
+  if (wasScan) { wasScan = false; last = ""; period = null; }   // coming back from scan mode: rebuild and re-measure
   const key = JSON.stringify([S.queue, S.out, S.roster, period]);
   if (key === last) return; last = key;
   $("back").hidden = !period;
@@ -106,7 +180,10 @@ function render() {
 }
 if (location.hash.length > 1) show(decodeURIComponent(location.hash.slice(1)));  // e.g. /#3 opens period 3
 connect((s, left) => {
-  S = s; setPill(s); $("sim").hidden = s.settings.simulator !== "on";
+  S = s; leftNow = left; setPill(s);
+  const sim = s.settings.simulator === "on";
+  $("sim").hidden = !sim || scanMode(); $("scanTest").hidden = !sim || !scanMode();
+  if (scanMode()) renderScanStatus(left);
   $("status").textContent = flash ? flash : s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
   render();
 });

@@ -43,7 +43,7 @@ the PIN-protected admin endpoints return them. In the admin pages IDs are masked
 - **Data**: totals, average / longest trip, over-time counts, trips per day, average length by day,
   time-of-day and per-period charts, and a sortable per-student table with a 12-week trend.
   Every chart has a **Table** view. Export per-student numbers to CSV.
-- **Settings**: **Pass input** (Sensor or Simulator) and countdown style (thick bar or pill), applied live.
+- **Settings**: **Student identification** (tap names or scan ID cards), **Pass input** (Sensor or Simulator) and countdown style (thick bar or pill), applied live.
   Simulator on = the kiosk shows Take pass / Return pass buttons and the real sensor is ignored; off = the
   sensor controls the pass and the buttons disappear. Switching back to Sensor catches up with where the pass
   really is. A computer with no sensor configured can't turn the simulator off. When `DESOTO_GPIO_PIN` is set,
@@ -73,6 +73,38 @@ Two students with the same name in one period are listed as `Name` and `Name (2)
 | `DESOTO_ROSTER` | roster file (default `<data>/roster.json`, seeded from `roster.sample.json`) |
 | `DESOTO_SECONDS` | trip length (default 420) |
 | `DESOTO_GPIO_PIN` | BCM pin of the hall sensor (Raspberry Pi) |
+
+## ID card scanning (instead of tapping names)
+
+Admin **Settings → Student identification → Scan ID card** replaces tap-a-name with scanning the student's ID card.
+No sensor or physical pass is used in this mode (the Pass input card is dimmed).
+
+How a trip goes:
+
+1. A student scans their card. If the pass is free and nobody is waiting, their trip **starts at once**. Otherwise they
+   are **added to the line** and the kiosk says "you are #3 in line".
+2. When the pass is free, the first student in line is **called**: the hallway display shows "Your turn: scan your ID to
+   start" with a countdown. They scan again to check in and the timer starts. Nobody can jump the line.
+3. If they don't scan in time (default 1 minute, set in Settings), they are skipped and can scan to rejoin at the back.
+4. A scan when they are back **ends the trip**. A trip that never gets a return scan is closed after 10 min to 1 hour
+   (default 30) and kept in the log as "No return logged", so a forgotten scan can't block the pass.
+
+Safeguards: unrecognised IDs just show "ID not recognized" (and after 20 in a minute scanning pauses, so nobody can
+guess IDs); the tap endpoints are switched off in this mode; by default IDs typed by hand are refused (a scanner types a
+whole ID in a fraction of a second); the ID is never displayed or sent to the kiosk or display. Each log row records how
+the student identified: **Scan**, **Tap** or **Teacher**.
+
+**Forgotten or lost card:** admin **Live → Add a student by name** adds them to the line or starts their trip, logged as
+"Teacher". **Mark returned** ends a trip, and **Clear queue** / **Remove** work as before.
+
+**Scanner:** any USB barcode/QR scanner that works like a keyboard (it types the ID, then Enter) works; use a 2D scanner
+for QR codes. If a QR code holds more than the number (for example a web address), Desoto accepts it as long as it contains
+exactly one known student ID. Keep the Pi's keyboard layout on US, since scanners send US key codes. To test with no scanner,
+turn the **simulator** on (Settings → Pass input): the kiosk footer then shows a box where you can type an ID.
+
+What scanning does and doesn't prove: it shows someone has the card, not that they are the student. Cards can be lent or a
+barcode photographed, so it is better than tapping a name, not perfect. A student listed in more than one period is
+treated as the first period listed.
 
 ## Raspberry Pi setup (kiosk + hallway display)
 

@@ -44,6 +44,28 @@ def _csv_response(name: str, header, rows) -> Response:
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+def scan_message(r: dict) -> str:
+    """Words for the kiosk after a scan. Never includes the ID."""
+    name = r.get("student", "")
+    code = r["result"]
+    if code == "started":
+        return f"{name}: your trip has started. Scan again when you are back."
+    if code == "returned":
+        s = r["seconds"]
+        return f"Welcome back, {name}. Trip time {s // 60}:{s % 60:02d}" + (" (over time)." if r["over"] else ".")
+    if code == "queued":
+        return f"{name}: you are #{r['position']} in line."
+    if code == "waiting":
+        if r["position"] == 1:
+            return f"{name}: you are next. Scan again when the pass is free."
+        return f"{name}: you are #{r['position']} in line. {r['next']} is next."
+    if code == "not_found":
+        return "ID not recognized. Please see your teacher."
+    if code == "rate_limited":
+        return "Too many unrecognized scans. Please wait a minute or see your teacher."
+    return "Scanning is not turned on."
+
+
 def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] = None,
                log: Optional[TripLog] = None, roster_path: Optional[Path] = None) -> FastAPI:
     owns_state = state is None
@@ -88,8 +110,25 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         if state.from_sensor(docked):
             asyncio.ensure_future(broadcast())
 
+    async def ticker() -> None:
+        """Once a second: skip students who don't scan when called, close runaway trips."""
+        while True:
+            await asyncio.sleep(1)
+            try:
+                if state.tick():
+                    await broadcast()
+            except Exception:  # keep the clock running whatever happens
+                pass
+
+    @app.on_event("shutdown")
+    async def shutdown() -> None:
+        task = getattr(app.state, "ticker", None)
+        if task:
+            task.cancel()
+
     @app.on_event("startup")
     async def startup() -> None:
+        app.state.ticker = asyncio.ensure_future(ticker())
         pin = os.environ.get("DESOTO_GPIO_PIN")
         if pin:
             from .sensor import GpioHallSensor
@@ -117,6 +156,8 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
 
     @app.post("/api/queue")
     async def join(who: Who):
+        if state.scan_mode:
+            raise HTTPException(403, "Students scan their ID card to join the queue")
         if not state.join(who.period, who.student):
             raise HTTPException(409, "Not on roster, already queued, or already out")
         await broadcast()
@@ -124,6 +165,8 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
 
     @app.delete("/api/queue/{period}/{student}")
     async def leave(period: str, student: str):
+        if state.scan_mode:
+            raise HTTPException(403, "Ask your teacher to remove you from the queue")
         if not state.leave(period, student):
             raise HTTPException(404, "Not in queue")
         await broadcast()
@@ -133,9 +176,23 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
     async def simulate(body: Docked):
         """Simulated sensor for development without hardware."""
         if not state.from_simulator(body.docked):
-            raise HTTPException(403, "The simulator is turned off in Settings")
+            raise HTTPException(403, "The pass simulator is not available (turned off, or ID scan mode is on)")
         await broadcast()
         return state.snapshot()
+
+    class Scan(BaseModel):
+        id: str
+
+    @app.post("/api/scan")
+    async def scan(body: Scan):
+        if len(body.id) > 200:
+            raise HTTPException(422, "Too long")
+        r = state.scan(body.id)
+        if r["result"] == "scan_off":
+            raise HTTPException(403, "ID scanning is turned off in Settings")
+        await broadcast()
+        status = 429 if r["result"] == "rate_limited" else 200
+        return JSONResponse({**r, "message": scan_message(r)}, status_code=status)
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket):
@@ -170,6 +227,10 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
     class Setting(BaseModel):
         bar_style: Optional[str] = None
         simulator: Optional[str] = None
+        identify: Optional[str] = None
+        scan_strict: Optional[str] = None
+        call_timeout: Optional[str] = None
+        max_trip_minutes: Optional[str] = None
 
     @admin.put("/settings")
     async def put_settings(body: Setting):
@@ -178,9 +239,15 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
             raise HTTPException(422, "Nothing to change")
         if changes.get("simulator") == "off" and not state.sensor_configured:
             raise HTTPException(409, "No sensor is configured (set DESOTO_GPIO_PIN), so nothing could take the pass")
+        if "identify" in changes and changes["identify"] != state.settings["identify"] and state.out:
+            raise HTTPException(409, "Finish the trip in progress (Mark returned) before changing how students identify")
         for k, v in changes.items():
             if not state.set_setting(k, v):
                 raise HTTPException(422, f"Invalid value for {k}")
+        if changes.get("identify") == "tap":  # back to the pass: catch up with the sensor if it is in charge
+            sensor = getattr(app.state, "sensor", None)
+            if sensor is not None and not state.simulator_on:
+                state.set_docked(sensor.docked)
         if changes.get("simulator") == "off":
             sensor = getattr(app.state, "sensor", None)
             if sensor is not None:  # hand control back to the sensor and catch up with where the pass really is
@@ -204,6 +271,36 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         n = state.clear_queue()
         await broadcast()
         return {"cleared": n}
+
+    class AddToQueue(BaseModel):
+        period: str
+        student: str
+        start: bool = False
+
+    @admin.post("/queue/add")
+    async def admin_add(body: AddToQueue):
+        """Teacher adds a student by name (forgotten card), optionally starting their trip at once."""
+        if body.start:
+            if not state.start_now(body.period, body.student):
+                raise HTTPException(409, "The pass is not free, or that student is not on the roster")
+        elif not state.join(body.period, body.student, "teacher"):
+            raise HTTPException(409, "Not on the roster, already in the queue, or already out")
+        await broadcast()
+        return state.snapshot()
+
+    @admin.post("/queue/start")
+    async def admin_start(body: AddToQueue):
+        if not state.start_now(body.period, body.student):
+            raise HTTPException(409, "The pass is not free, or that student is not on the roster")
+        await broadcast()
+        return state.snapshot()
+
+    @admin.delete("/queue/{period}/{student}")
+    async def admin_remove(period: str, student: str):
+        if not state.leave(period, student):
+            raise HTTPException(404, "Not in queue")
+        await broadcast()
+        return state.snapshot()
 
     @admin.post("/pass/return")
     async def return_pass():
@@ -301,10 +398,10 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
                 datetime.fromtimestamp(r["out_at"]).strftime("%Y-%m-%d"), _safe(r["period"]), _safe(r["name"]),
                 _safe(r["student_id"]), _fmt_time(r["out_at"]), _fmt_time(r["in_at"]),
                 "" if r["seconds"] is None else round(r["seconds"] / 60, 2), round(r["allowed"] / 60, 2),
-                "yes" if r["over"] else "no", r["status"], r["source"]])
+                "yes" if r["over"] else "no", r["status"], r["source"], r["method"]])
         return _csv_response("desoto-activity.csv",
                              ["Date", "Period", "Name", "Student ID", "Out", "In", "Minutes", "Allowed minutes",
-                              "Over time", "Status", "Ended by"], data)
+                              "Over time", "Status", "Ended by", "Identified by"], data)
 
     def _stats(start, end, period):
         parse_range(start, end)

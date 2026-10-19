@@ -90,3 +90,5 @@ table.t{width:100%;border-collapse:collapse}
 .sensor-status.docked{border-color:var(--green);color:var(--green);background:var(--green-bg)}
 .sensor-status.undocked{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
 .sensor-status.none{color:var(--muted);text-transform:none;font-weight:700}
+
+.dim{opacity:.5}

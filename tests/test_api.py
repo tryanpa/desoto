@@ -180,3 +180,72 @@ def test_sensor_test_needs_the_pin(env):
     c, _, _ = env("1234")
     assert c.get("/api/admin/sensor").status_code == 401
     assert c.post("/api/admin/sensor/reset").status_code == 401
+
+
+# ------------------------------------------------------------------ scan mode
+def scan_client(env):
+    c, state, p = env()
+    assert c.put("/api/admin/settings", json={"identify": "scan"}).status_code == 200
+    return c, state, p
+
+
+def test_scan_endpoint_gating_and_messages(env):
+    c, state, _ = env()
+    assert c.post("/api/scan", json={"id": "1234567"}).status_code == 403       # tap mode
+    c, state, _ = scan_client(env)
+    r = c.post("/api/scan", json={"id": "1234567"})
+    body = r.json()
+    assert r.status_code == 200 and body["result"] == "started" and body["student"] == "Ava Johnson"
+    assert "1234567" not in r.text and "Ava Johnson" in body["message"]
+    assert c.post("/api/scan", json={"id": "7654321"}).json()["result"] == "queued"
+    nf = c.post("/api/scan", json={"id": "0000000"}).json()
+    assert nf["result"] == "not_found" and "0000000" not in nf["message"]
+    assert c.post("/api/scan", json={"id": "x" * 500}).status_code == 422
+
+
+def test_tap_endpoints_locked_in_scan_mode(env):
+    c, state, _ = scan_client(env)
+    assert c.post("/api/queue", json={"period": "1", "student": "Ava Johnson"}).status_code == 403
+    assert c.delete("/api/queue/1/Ava Johnson").status_code == 403
+    assert c.post("/api/sim/docked", json={"docked": False}).status_code == 403
+    assert state.queue == [] and state.out is None
+
+
+def test_scan_rate_limit_returns_429(env):
+    c, _, _ = scan_client(env)
+    codes = [c.post("/api/scan", json={"id": f"000{i}"}).status_code for i in range(25)]
+    assert codes[:20] == [200] * 20 and codes[20:] == [429] * 5
+    assert c.post("/api/scan", json={"id": "1234567"}).status_code == 429
+
+
+def test_cannot_change_how_students_identify_mid_trip(env):
+    c, state, _ = scan_client(env)
+    c.post("/api/scan", json={"id": "1234567"})
+    assert c.put("/api/admin/settings", json={"identify": "tap"}).status_code == 409
+    assert c.put("/api/admin/settings", json={"identify": "scan"}).status_code == 200   # unchanged value is fine
+    c.post("/api/scan", json={"id": "1234567"})                                       # scan back in
+    assert c.put("/api/admin/settings", json={"identify": "tap"}).status_code == 200
+    assert c.put("/api/admin/settings", json={"call_timeout": "7"}).status_code == 422
+
+
+def test_teacher_can_add_start_and_remove(env):
+    c, state, _ = scan_client(env)
+    assert c.post("/api/admin/queue/add", json={"period": "1", "student": "Ben Carter"}).status_code == 200
+    assert state.queue == [("1", "Ben Carter")] and state.queue_method[("1", "Ben Carter")] == "teacher"
+    assert c.post("/api/admin/queue/add", json={"period": "1", "student": "Ben Carter"}).status_code == 409
+    assert c.delete("/api/admin/queue/1/Ben Carter").status_code == 200 and state.queue == []
+    assert c.post("/api/admin/queue/add", json={"period": "1", "student": "Ava Johnson", "start": True}).status_code == 200
+    assert state.out.student == ("1", "Ava Johnson") and state.out.method == "teacher"
+    assert c.post("/api/admin/queue/start", json={"period": "1", "student": "Ben Carter"}).status_code == 409   # pass busy
+    row = c.get("/api/admin/log").json()["rows"][0]
+    assert row["method"] == "teacher" and row["student_id"] == "1234567"
+    assert "Identified by" in c.get("/api/admin/log.csv").text and "teacher" in c.get("/api/admin/log.csv").text
+
+
+def test_new_admin_endpoints_need_the_pin(env):
+    c, _, _ = env("1234")
+    for method, url, body in [("post", "/api/admin/queue/add", {"period": "1", "student": "Ava Johnson"}),
+                              ("post", "/api/admin/queue/start", {"period": "1", "student": "Ava Johnson"}),
+                              ("delete", "/api/admin/queue/1/Ava Johnson", None)]:
+        r = getattr(c, method)(url, **({"json": body} if body else {}))
+        assert r.status_code == 401, url
