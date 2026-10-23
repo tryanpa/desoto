@@ -492,6 +492,32 @@ views.data = async alive => {
 };
 
 // ----------------------------------------------------------------- Settings
+// Shut down or restart the computer this server runs on. Needs an admin PIN and the one-time sudo rule.
+function computerCard(alive) {
+  const c = card("This computer"), msg = h("div", {class: "help", style: "margin-top:12px"});
+  const down = btn("Shut down", () => go("shutdown"), "danger"), again = btn("Restart", () => go("restart"));
+  down.disabled = again.disabled = true;
+  async function go(action) {
+    const out = latest && latest.out;
+    const q = (action === "shutdown" ? "Shut down this computer? The kiosk and hallway display will go blank." : "Restart this computer? The kiosk and display will be back in about a minute.")
+      + (out ? `\n\n${out.student} is out right now. That trip will be logged as "No return logged".` : "");
+    if (!confirm(q)) return;
+    try {
+      await api(`/api/admin/system/${action}`, {method: "POST", body: {confirm: true}});
+      msg.textContent = action === "shutdown" ? "Shutting down. Wait until the green light on the Pi stops flashing, then unplug it." : "Restarting. This page reconnects in about a minute.";
+      down.disabled = again.disabled = true;
+    } catch (e) { msg.textContent = errText(e); }
+  }
+  c.append(h("div", {class: "body"}, h("div", {class: "row"}, down, again),
+    h("div", {class: "help", style: "margin-top:12px"}, "Use Shut down before unplugging the Pi, so the roster and trip log are saved safely."), msg));
+  api("/api/admin/system").then(r => {
+    if (!alive()) return;
+    down.disabled = again.disabled = !r.can_power;
+    if (!r.can_power) msg.textContent = r.why;
+  }).catch(() => { msg.textContent = "Could not check this computer."; });
+  return c;
+}
+
 // Live readings from the real sensor, for tuning the pass and holder. Polls while the page is open.
 function sensorCard(alive) {
   const status = h("div", {class: "sensor-status none"}, "Waiting…"), note = h("div", {class: "help", style: "margin:-6px 0 14px"});
@@ -567,6 +593,22 @@ views.settings = async alive => {
     groups.push(st => { sel.value = st.settings[field]; });
     return h("div", {class: "field", style: "margin-bottom:16px"}, h("span", null, label), sel, hint ? h("div", {class: "help"}, hint) : null);
   }
+  // Pass length: applies from the next trip, so a student who is already out keeps the length they started with.
+  const lenSteps = [60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 720, 900, 1200, 1800, 2700, 3600];
+  const lenText = sec => sec % 60 === 0 ? `${sec / 60} minute${sec === 60 ? "" : "s"}` : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} minutes`;
+  const lenSel = h("select", {"aria-label": "Pass length", onchange: async e => {
+    try { await api("/api/admin/settings", {method: "PUT", body: {pass_seconds: e.target.value}}); note("Saved. It applies from the next trip.", "okbox"); }
+    catch (err) { note(errText(err), "errbox"); }
+  }});
+  function syncLength(st) {
+    const cur = Number(st.settings.pass_seconds), steps = lenSteps.includes(cur) ? lenSteps : [...lenSteps, cur].sort((a, b) => a - b);
+    if (lenSel.dataset.have !== steps.join()) { lenSel.dataset.have = steps.join(); lenSel.replaceChildren(...steps.map(v => h("option", {value: String(v)}, lenText(v)))); }
+    if (document.activeElement !== lenSel) lenSel.value = String(cur);
+  }
+  const lengthCard = card("Pass length");
+  lengthCard.append(h("div", {class: "body"}, h("div", {class: "field"}, h("span", null, "How long a student may be out"), lenSel,
+    h("div", {class: "help"}, "Applies from the next trip. A student who is already out keeps the length they started with. This overrides DESOTO_SECONDS."))));
+
   const scanCard = card("ID scanning");
   scanCard.append(h("div", {class: "body"},
     selectRow("Time to scan when called", "call_timeout", [["30", "30 seconds"], ["60", "1 minute"], ["120", "2 minutes"], ["300", "5 minutes"], ["0", "Never skip"]],
@@ -590,8 +632,10 @@ views.settings = async alive => {
     group("Countdown style", "bar_style", [
       ["thick", "Thick bar", "Large digits with a thick progress bar beneath", h("div", {class: "prev"}, h("div", {class: "d"}, "4:32"), h("div", {class: "b"}, h("i")))],
       ["pill", "Pill", "One large pill with the time inside the bar", h("div", {class: "prev"}, h("div", {class: "p"}, h("i"), h("span", null, "4:32")))]]),
+    lengthCard, computerCard(alive),
     msg);
   current.onState = s => {
+    syncLength(s);
     groups.forEach(g => g(s));
     const scanning = s.settings.identify === "scan";
     scanCard.hidden = !scanning; passCard.classList.toggle("dim", scanning);

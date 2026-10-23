@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import power
 from . import roster as rosterlib
 from . import stats
 from .db import TripLog
@@ -81,6 +82,7 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         log = TripLog(data / "trips.db")
     if log is not None:
         state.log = log
+    default_seconds = state.duration   # from DESOTO_SECONDS; a length chosen in Settings overrides it
     saved = json.loads(settings_path.read_text()) if settings_path and settings_path.exists() else {}
     for k, v in saved.items():
         state.set_setting(k, v)
@@ -230,6 +232,7 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         bar_style: Optional[str] = None
         simulator: Optional[str] = None
         test_controls: Optional[str] = None
+        pass_seconds: Optional[str] = None
         identify: Optional[str] = None
         scan_strict: Optional[str] = None
         call_timeout: Optional[str] = None
@@ -256,7 +259,10 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
             if sensor is not None:  # hand control back to the sensor and catch up with where the pass really is
                 state.set_docked(sensor.docked)
         if settings_path:
-            settings_path.write_text(json.dumps(state.settings))
+            data = dict(state.settings)
+            if data.get("pass_seconds") == str(default_seconds):
+                data.pop("pass_seconds")   # still the DESOTO_SECONDS default: let that setting keep working
+            settings_path.write_text(json.dumps(data))
         await broadcast()
         return state.settings
 
@@ -268,6 +274,30 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
     def reset_sensor():
         monitor.reset()
         return {"ok": True}
+
+    class PowerBody(BaseModel):
+        confirm: bool = False
+
+    @admin.get("/system")
+    def system_info():
+        if not admin_pin:
+            return {"can_power": False, "why": "Set an admin PIN (DESOTO_ADMIN_PIN) to turn this on."}
+        if not power.available():
+            return {"can_power": False, "why": "Not available on this computer. On the Pi, run ./deploy/pi-install.sh --power-only."}
+        return {"can_power": True, "why": ""}
+
+    @admin.post("/system/{action}")
+    def system_power(action: str, body: PowerBody):
+        if action not in power.ACTIONS:
+            raise HTTPException(404, "Unknown action")
+        if not admin_pin:  # never let an open admin page power the computer off
+            raise HTTPException(403, "Set an admin PIN (DESOTO_ADMIN_PIN) before using this")
+        if not body.confirm:
+            raise HTTPException(422, "Confirmation required")
+        if not power.available():
+            raise HTTPException(501, "This computer is not set up for it (see ./deploy/pi-install.sh --power-only)")
+        power.schedule(action)
+        return {"ok": True, "action": action}
 
     @admin.post("/queue/clear")
     async def clear_queue():

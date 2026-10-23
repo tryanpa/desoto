@@ -62,12 +62,12 @@ connect((s, left) => {
   if (s.out) {
     $("oLabel").textContent = "Out now"; $("out").textContent = s.out.student;
     $("oSub").textContent = left < 0 ? "Time over" : "Time remaining";
-    $("count").textContent = fmt(left); $("count").className = "count " + tone(left);
+    $("count").textContent = fmt(left); $("count").className = "count " + tone(left, s.duration);
     // Over time the bar fills solid red and blinks (an empty bar would hide the colour).
     const pct = left < 0 ? 100 : Math.min(100, left / s.duration * 100);
     $("fill").style.width = pct + "%";
     $("bar").classList.toggle("over", left < 0); $("pt").textContent = fmt(left);
-    $("fill").style.background = left < 0 ? "var(--red)" : left < 120 ? "var(--amber)" : "var(--green)";
+    $("fill").style.background = left < 0 ? "var(--red)" : left < warnAt(s.duration) ? "var(--amber)" : "var(--green)";
     $("status").textContent = left < 0 ? `Over time — ${s.out.student}` : `${s.out.student} is out`;
   } else if (s.called) {
     // Scan mode: the pass is free and this student has been called. They scan their ID to start.

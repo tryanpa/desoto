@@ -33,6 +33,7 @@ class Trip:
     started_at: float
     log_id: Optional[int] = None
     method: str = "tap"
+    allowed: int = DEFAULT_DURATION   # the length this trip was given when it started
 
 
 @dataclass
@@ -53,6 +54,9 @@ class PassState:
     called_at: Optional[float] = None   # scan mode: when the pass became free for the student at the front
     notice: Optional[dict] = None       # short message for the display, e.g. a skipped student
     _fails: List[float] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.settings.setdefault("pass_seconds", str(self.duration))
 
     # -- roster ------------------------------------------------------------
     def set_roster(self, full: Dict[str, List[dict]]) -> None:
@@ -87,6 +91,12 @@ class PassState:
     # -- settings ----------------------------------------------------------
     def set_setting(self, key: str, value: str) -> bool:
         """Change a setting. Returns False for unknown keys or bad values."""
+        if key == "pass_seconds":  # the length of a trip: 1 to 60 minutes. Applies from the next trip.
+            if isinstance(value, str) and value.isdigit() and 60 <= int(value) <= 3600:
+                self.duration = int(value)
+                self.settings[key] = str(int(value))
+                return True
+            return False
         if key in CHOICES and value in CHOICES[key]:
             self.settings[key] = value
             if key == "identify":
@@ -132,7 +142,7 @@ class PassState:
     # -- starting and ending a trip ---------------------------------------
     def _start_trip(self, who: Student, method: str) -> None:
         now = self.clock()
-        self.out = Trip(who, now, method=method)
+        self.out = Trip(who, now, method=method, allowed=self.duration)
         self.docked = False
         self.called_at = None
         if self.log:
@@ -199,8 +209,9 @@ class PassState:
             return {"result": "not_found"}
         res = {"student": who[1], "period": who[0]}
         if self.out and self.out.student == who:
+            allowed = self.out.allowed
             secs = self._end_trip("scan")
-            return {**res, "result": "returned", "seconds": secs, "over": secs > self.duration}
+            return {**res, "result": "returned", "seconds": secs, "over": secs > allowed}
         if who in self.queue:
             pos = self.queue.index(who) + 1
             if self.out is None and pos == 1:
@@ -267,7 +278,7 @@ class PassState:
             called = dict(person(self.queue[0]), expires_at=(self.called_at + timeout) if timeout else None, window=timeout)
         return {
             "now": self.clock(),
-            "duration": self.duration,
+            "duration": self.out.allowed if self.out else self.duration,   # a trip in progress keeps its own length
             "docked": self.docked,
             "out": (dict(person(self.out.student), started_at=self.out.started_at)
                     if self.out else None),

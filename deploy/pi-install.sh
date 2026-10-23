@@ -7,18 +7,20 @@
 #
 # Options: --dry-run (print what would happen, change nothing)   --no-kiosk (server only)
 #          --hostname NAME   --gpio-pin N (default 17)   --pin ADMIN_PIN
+#          --power-only   just allow the admin page's Shut down / Restart buttons (for an existing install)
 set -euo pipefail
 
-MODE=server; SERVER=desoto.local; DRY=0; KIOSK=1; NEWHOST=""; GPIO=17; ADMIN_PIN=""; PIN_SET=0
+MODE=server; SERVER=desoto.local; DRY=0; KIOSK=1; NEWHOST=""; GPIO=17; ADMIN_PIN=""; PIN_SET=0; POWER_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     display) MODE=display; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then SERVER="$2"; shift; fi ;;
     --dry-run) DRY=1 ;;
     --no-kiosk) KIOSK=0 ;;
+    --power-only) POWER_ONLY=1 ;;
     --hostname) NEWHOST="$2"; shift ;;
     --gpio-pin) GPIO="$2"; shift ;;
     --pin) ADMIN_PIN="$2"; PIN_SET=1; shift ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -39,6 +41,20 @@ if [ "$DRY" = 0 ] && ! grep -qi "raspberry" /proc/device-tree/model 2>/dev/null;
   die "This doesn't look like a Raspberry Pi. Use --dry-run to preview."
 fi
 
+install_power_rule() {
+  # Lets this user run exactly `systemctl poweroff` and `systemctl reboot` without a password (and nothing else),
+  # which is how the admin page's Shut down / Restart buttons work.
+  local ctl tmp=/etc/sudoers.d/desoto-power.tmp
+  ctl="$(readlink -f "$(command -v systemctl 2>/dev/null || echo /usr/bin/systemctl)")"
+  say "Letting the admin page shut down / restart this Pi (a narrow sudo rule for $(id -un))"
+  write "$tmp" <<RULE
+$(id -un) ALL=(root) NOPASSWD: $ctl poweroff, $ctl reboot
+RULE
+  run sudo chmod 440 "$tmp"
+  run sudo visudo -cf "$tmp"          # refuses to continue if the rule has a mistake
+  run sudo mv "$tmp" /etc/sudoers.d/desoto-power
+}
+
 setup_kiosk() {  # URL
   local url="$1" auto="$HOME/.config/labwc/autostart"
   say "Opening $url full screen at every login"
@@ -50,6 +66,8 @@ setup_kiosk() {  # URL
   else echo "\"$DIR/deploy/kiosk.sh\" '$url' &  # desoto-kiosk" >> "$auto"; fi
   run chmod +x "$DIR/deploy/kiosk.sh"
 }
+
+if [ "$POWER_ONLY" = 1 ]; then install_power_rule; say "Done. Restart the server: sudo systemctl restart desoto"; exit 0; fi
 
 if [ -n "$NEWHOST" ]; then
   say "Setting the hostname to $NEWHOST (reachable as $NEWHOST.local)"
@@ -107,6 +125,7 @@ WantedBy=multi-user.target
 UNIT
 run sudo systemctl daemon-reload
 run sudo systemctl enable --now desoto
+install_power_rule
 
 [ "$KIOSK" = 1 ] && setup_kiosk "http://localhost:8000/"
 

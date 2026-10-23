@@ -43,7 +43,7 @@ the PIN-protected admin endpoints return them. In the admin pages IDs are masked
 - **Data**: totals, average / longest trip, over-time counts, trips per day, average length by day,
   time-of-day and per-period charts, and a sortable per-student table with a 12-week trend.
   Every chart has a **Table** view. Export per-student numbers to CSV.
-- **Settings**: **Student identification** (tap names or scan ID cards), **Pass input** (Sensor or Simulator), **Simulator and test controls** (Show or Hide) and countdown style (thick bar or pill), applied live.
+- **Settings**: **Student identification** (tap names or scan ID cards), **Pass input** (Sensor or Simulator), **Simulator and test controls** (Show or Hide), **Pass length**, and **This computer** (Shut down / Restart) and countdown style (thick bar or pill), applied live.
   Simulator on = the kiosk shows Take pass / Return pass buttons and the real sensor is ignored; off = the
   sensor controls the pass and the buttons disappear. Switching back to Sensor catches up with where the pass
   really is. A computer with no sensor configured can't turn the simulator off. When `DESOTO_GPIO_PIN` is set,
@@ -71,7 +71,7 @@ Two students with the same name in one period are listed as `Name` and `Name (2)
 | `DESOTO_ADMIN_PIN` | PIN required for admin pages and endpoints |
 | `DESOTO_DATA` | data folder (default `./data`) |
 | `DESOTO_ROSTER` | roster file (default `<data>/roster.json`, seeded from `roster.sample.json`) |
-| `DESOTO_SECONDS` | trip length (default 420) |
+| `DESOTO_SECONDS` | starting trip length in seconds (default 420). A length chosen in admin Settings overrides it |
 | `DESOTO_GPIO_PIN` | BCM pin of the hall sensor (Raspberry Pi) |
 
 ## ID card scanning (instead of tapping names)
@@ -150,6 +150,15 @@ The pin is read with its internal pull-up, so **docked = pin pulled to ground**.
 **Simulator and test controls:** set to **Hide** for the real classroom: the kiosk shows no Take pass / Return pass buttons or
 type-an-ID box, and the server refuses simulator requests. **Show** is for testing. A fresh install on a Pi with a sensor starts
 on Sensor with the controls hidden; a laptop starts with them shown.
+
+**Pass length:** admin **Settings → Pass length** (1 to 60 minutes). It applies from the next trip: a student who is already out keeps
+the length they started with, and each trip in the log remembers the length it was given.
+
+**Shut down / Restart:** admin **Settings → This computer**. For safety it only works when an admin PIN is set (otherwise anyone on
+the network could use it), and it needs a one-time rule on the Pi that lets the Desoto user run exactly `systemctl poweroff` and
+`systemctl reboot`. A fresh `./deploy/pi-install.sh` adds it. For an install you already have, run
+`./deploy/pi-install.sh --power-only` and then `sudo systemctl restart desoto`. On a Mac or any computer without that rule the
+buttons stay greyed out with a note saying why. A trip that is open when you shut down is kept in the log as "No return logged".
 
 **Sensor test:** admin **Settings → Sensor test** shows the sensor's live reading (docked / out), a count of changes,
 the shortest gap between changes and a list of recent readings. Lift and replace the pass a few times: each lift and

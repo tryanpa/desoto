@@ -272,3 +272,45 @@ def test_fresh_install_with_a_sensor_hides_test_controls(monkeypatch, tmp_path):
     monkeypatch.delenv("DESOTO_GPIO_PIN")
     monkeypatch.setenv("DESOTO_DATA", str(tmp_path / "other"))
     assert TestClient(create_app()).get("/api/state").json()["settings"]["test_controls"] == "show"   # a laptop keeps them
+
+
+def test_pass_length_setting_saved_and_env_default_not_frozen(env, tmp_path):
+    c, state, p = env()
+    assert c.get("/api/state").json()["duration"] == 420
+    assert c.put("/api/admin/settings", json={"pass_seconds": "300"}).status_code == 200
+    assert c.get("/api/state").json()["duration"] == 300 and state.duration == 300
+    assert json.loads(p["settings_path"].read_text())["pass_seconds"] == "300"
+    c2 = TestClient(create_app(PassState({}), **p))                      # restart: the saved choice wins
+    assert c2.get("/api/state").json()["duration"] == 300
+    assert c.put("/api/admin/settings", json={"pass_seconds": "20"}).status_code == 422
+    assert c.put("/api/admin/settings", json={"pass_seconds": "420"}).status_code == 200   # back to the default length
+    assert "pass_seconds" not in json.loads(p["settings_path"].read_text())              # so DESOTO_SECONDS keeps working
+    c.put("/api/admin/settings", json={"bar_style": "pill"})
+    assert "pass_seconds" not in json.loads(p["settings_path"].read_text())
+
+
+def test_power_buttons_need_a_pin_a_confirm_and_a_prepared_computer(env, monkeypatch):
+    calls = []
+    monkeypatch.setattr("desoto.power.available", lambda: True)
+    monkeypatch.setattr("desoto.power.schedule", lambda action, delay=3: calls.append(action))
+    c, _, _ = env()                                                     # no PIN set
+    assert c.get("/api/admin/system").json()["can_power"] is False
+    assert c.post("/api/admin/system/shutdown", json={"confirm": True}).status_code == 403 and calls == []
+    c, _, _ = env("1234"); h = {"X-Admin-Pin": "1234"}
+    assert c.post("/api/admin/system/shutdown", json={"confirm": True}).status_code == 401      # PIN required
+    assert c.post("/api/admin/system/shutdown", json={}, headers=h).status_code == 422          # must confirm
+    assert c.post("/api/admin/system/explode", json={"confirm": True}, headers=h).status_code == 404
+    assert c.get("/api/admin/system", headers=h).json() == {"can_power": True, "why": ""}
+    assert c.post("/api/admin/system/shutdown", json={"confirm": True}, headers=h).status_code == 200
+    assert c.post("/api/admin/system/restart", json={"confirm": True}, headers=h).status_code == 200
+    assert calls == ["shutdown", "restart"]
+    monkeypatch.setattr("desoto.power.available", lambda: False)                                 # e.g. a Mac, or no sudo rule
+    assert c.post("/api/admin/system/shutdown", json={"confirm": True}, headers=h).status_code == 501
+    assert "power-only" in c.get("/api/admin/system", headers=h).json()["why"]
+    assert calls == ["shutdown", "restart"]
+
+
+def test_power_available_is_false_without_the_sudo_rule():
+    from desoto import power
+    assert power.available() is False or power.available() is True       # must never raise
+    assert set(power.ACTIONS) == {"shutdown", "restart"}

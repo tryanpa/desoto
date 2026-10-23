@@ -156,3 +156,26 @@ def test_hiding_test_controls_disables_the_simulator():
     assert s.set_setting("test_controls", "hide") and not s.set_setting("test_controls", "maybe")
     assert not s.from_simulator(False) and s.out is None           # hidden = refused, even with the simulator on
     assert s.snapshot()["settings"]["test_controls"] == "hide"
+
+
+def test_pass_length_applies_from_the_next_trip():
+    log = TripLog()
+    s, t = make(log=log)
+    assert s.settings["pass_seconds"] == "420" and s.duration == 420
+    s.scan("1001")                                     # Ava starts on 7 minutes
+    assert s.set_setting("pass_seconds", "300") and s.duration == 300
+    assert s.snapshot()["duration"] == 420             # her trip keeps its own length
+    t[0] += 350                                        # 5:50: over the NEW limit, but not her 7 minutes
+    r = s.scan("1001")
+    assert r["over"] is False and log.query()[0][0]["allowed"] == 420 and log.query()[0][0]["over"] is False
+    assert s.snapshot()["duration"] == 300             # nobody out: the new length shows
+    s.scan("1002"); t[0] += 350
+    assert s.scan("1002")["over"] is True and log.query()[0][0]["allowed"] == 300
+
+
+def test_pass_length_validation():
+    s, _ = make()
+    for bad in ("59", "3601", "abc", "", "7.5", "-60"):
+        assert not s.set_setting("pass_seconds", bad), bad
+    assert s.set_setting("pass_seconds", "60") and s.set_setting("pass_seconds", "3600") and s.set_setting("pass_seconds", "450")
+    assert s.duration == 450

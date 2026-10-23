@@ -14,7 +14,8 @@ function connect(onState) {
 const fmt = s => { const a = Math.abs(Math.floor(s)); return (s < 0 ? "+" : "") + Math.floor(a / 60) + ":" + String(a % 60).padStart(2, "0"); };
 const $ = id => document.getElementById(id);
 // Colour for a countdown: green, amber in the last 2 minutes, red when over.
-const tone = s => s < 0 ? "red over" : s < 120 ? "amber" : "green";
+const warnAt = duration => Math.min(120, duration / 3);   // amber in the last 2 minutes (or last third of a short pass)
+const tone = (s, duration) => s < 0 ? "red over" : s < warnAt(duration || 420) ? "amber" : "green";
 function startClock(el) {
   const tick = () => el.textContent = new Date().toLocaleTimeString([], {hour: "numeric", minute: "2-digit", second: "2-digit"});
   tick(); setInterval(tick, 1000);
