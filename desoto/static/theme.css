@@ -32,3 +32,6 @@ main{flex:1;display:flex;flex-direction:column;align-items:center;justify-conten
  main{padding:12px 24px;gap:12px}
 }
 [hidden]{display:none!important}
+
+/* ?embed=1 (used by the split-screen page): no header bar, the page fills its frame */
+html.embed .topbar{display:none}

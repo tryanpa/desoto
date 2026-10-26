@@ -136,6 +136,21 @@ that Pi a fixed address in your router. The browser waits for the server, so pow
 If the touch lands in the wrong place, or the screen still sleeps, check Raspberry Pi Configuration -> Display
 (screen blanking) and the Screen Configuration tool (touch mapping); both are standard Trixie settings.
 
+### One tall screen: hallway display on top, kiosk underneath
+
+`combo.html` stacks the hallway display (top) and the kiosk (bottom) on one screen, so a single Pi and a single monitor do both
+jobs. Point the kiosk browser at it instead of `/`:
+
+    http://localhost:8000/combo.html                     a normal, upright screen
+    http://localhost:8000/combo.html?rotate=90           screen turned on its side (use rotate=270 if the picture is upside down)
+    http://localhost:8000/combo.html?rotate=90&split=40  give the display 40% of the height (20 to 80)
+
+With the installer: `./deploy/pi-install.sh --split --rotate 90`. With the `cage` service, put that URL on the `ExecStart` line
+in place of `http://localhost:8000/`. The page turns itself with CSS because `cage` cannot rotate a screen, and touch still lands
+on the right place. The display half is look-only (touches on it do nothing, so they can't take keyboard focus from the
+scanner), and scanner keystrokes are passed to the kiosk half whichever part has focus. The clock bar and status footer are
+hidden in this view.
+
 ### Hall sensor / reed switch wiring
 
 `DESOTO_GPIO_PIN` (default 17 = physical pin 11, set by the installer in `.env`) is the BCM pin that reads the pass.

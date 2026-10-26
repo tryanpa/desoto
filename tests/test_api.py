@@ -54,7 +54,7 @@ def test_ids_never_reach_kiosk_or_display(env):
     for b in blobs:
         assert "1234567" not in b and "7654321" not in b
     assert "1234567" in c.get("/api/admin/roster").text  # admins do see them
-    for f in ("kiosk.html", "display.html", "common.js"):
+    for f in ("kiosk.html", "display.html", "combo.html", "common.js"):
         text = (__import__("pathlib").Path("desoto/static") / f).read_text()
         # The public pages must never read an ID field or call an admin endpoint. (The kiosk does send the
         # ID a scanner typed to /api/scan, but nothing ever comes back with one: see the snapshot checks above.)
@@ -314,3 +314,9 @@ def test_power_available_is_false_without_the_sudo_rule():
     from desoto import power
     assert power.available() is False or power.available() is True       # must never raise
     assert set(power.ACTIONS) == {"shutdown", "restart"}
+
+
+def test_split_screen_page_is_served(env):
+    c, _, _ = env()
+    r = c.get("/combo.html")
+    assert r.status_code == 200 and "display.html?embed=1" in r.text and "kiosk.html?embed=1" in r.text

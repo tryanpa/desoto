@@ -1,6 +1,7 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Desoto Display</title>
 <link rel="stylesheet" href="theme.css">
+<script>if (new URLSearchParams(location.search).has("embed")) document.documentElement.classList.add("embed");</script>
 <style>
  .layout{flex:1;display:grid;grid-template-columns:1fr clamp(300px,28vw,440px);min-height:0}
  main{gap:36px;text-align:center}
@@ -29,7 +30,10 @@
  .row.next .nm{font-size:1.5rem}
  .tag{font-size:.65rem;letter-spacing:.2em;font-weight:800;color:var(--green);text-transform:uppercase}
  .empty{color:var(--muted);text-align:center;padding:32px 0;font-weight:700}
- @media (max-width:800px){.layout{grid-template-columns:1fr}aside{display:none}}
+ @media (max-width:800px){html:not(.embed) .layout{grid-template-columns:1fr}html:not(.embed) aside{display:none}}
+ html.embed .footer{display:none}
+ html.embed .row .nm{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15}
+ html.embed .layout{grid-template-columns:1fr clamp(220px,32vw,420px)}
 </style>
 <div class="topbar"><div class="brand">Desoto<i>—</i>Display</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>

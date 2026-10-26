@@ -7,20 +7,23 @@
 #
 # Options: --dry-run (print what would happen, change nothing)   --no-kiosk (server only)
 #          --hostname NAME   --gpio-pin N (default 17)   --pin ADMIN_PIN
+#          --split [--rotate 90|180|270]   one tall screen: hallway display on top, kiosk below (see README)
 #          --power-only   just allow the admin page's Shut down / Restart buttons (for an existing install)
 set -euo pipefail
 
-MODE=server; SERVER=desoto.local; DRY=0; KIOSK=1; NEWHOST=""; GPIO=17; ADMIN_PIN=""; PIN_SET=0; POWER_ONLY=0
+MODE=server; SERVER=desoto.local; DRY=0; KIOSK=1; NEWHOST=""; GPIO=17; ADMIN_PIN=""; PIN_SET=0; POWER_ONLY=0; SPLIT=0; ROTATE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     display) MODE=display; if [ $# -gt 1 ] && [ "${2#--}" = "$2" ]; then SERVER="$2"; shift; fi ;;
     --dry-run) DRY=1 ;;
     --no-kiosk) KIOSK=0 ;;
     --power-only) POWER_ONLY=1 ;;
+    --split) SPLIT=1 ;;
+    --rotate) ROTATE="$2"; shift ;;
     --hostname) NEWHOST="$2"; shift ;;
     --gpio-pin) GPIO="$2"; shift ;;
     --pin) ADMIN_PIN="$2"; PIN_SET=1; shift ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -127,7 +130,13 @@ run sudo systemctl daemon-reload
 run sudo systemctl enable --now desoto
 install_power_rule
 
-[ "$KIOSK" = 1 ] && setup_kiosk "http://localhost:8000/"
+if [ "$KIOSK" = 1 ]; then
+  case "$ROTATE" in 0|90|180|270) ;; *) die "--rotate must be 90, 180 or 270" ;; esac
+  if [ "$SPLIT" = 1 ]; then
+    KURL="http://localhost:8000/combo.html"; [ "$ROTATE" != 0 ] && KURL="$KURL?rotate=$ROTATE"
+  else KURL="http://localhost:8000/"; fi
+  setup_kiosk "$KURL"
+fi
 
 say "Done."
 echo "  Check the server:   systemctl status desoto      (logs: journalctl -u desoto -f)"

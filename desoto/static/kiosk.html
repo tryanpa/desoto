@@ -1,6 +1,7 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Desoto Kiosk</title>
 <link rel="stylesheet" href="theme.css">
+<script>if (new URLSearchParams(location.search).has("embed")) document.documentElement.classList.add("embed");</script>
 <style>
  main{justify-content:flex-start;align-items:stretch;padding:14px 20px 16px;gap:14px;overflow:hidden}
  .head{display:flex;align-items:center;gap:18px;flex:none}
@@ -85,7 +86,7 @@ function finishScan() {
   submitScan(code);
 }
 function testScan() { const i = $("testId"); if (i.value.trim()) { submitScan(i.value.trim()); i.value = ""; } }
-document.addEventListener("keydown", e => {
+function onKey(e) {
   if (!scanMode()) return;
   if (e.target && e.target.id === "testId") { if (e.key === "Enter") { e.preventDefault(); testScan(); } return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -96,6 +97,13 @@ document.addEventListener("keydown", e => {
   buf += e.key; times.push(now); e.preventDefault();
   // Some scanners send no Enter after the ID: a short pause means the scan is finished.
   clearTimeout(idleTimer); idleTimer = setTimeout(finishScan, 200);
+}
+document.addEventListener("keydown", onKey);
+// Split-screen page: it forwards scanner keystrokes here, whichever frame has focus.
+window.addEventListener("message", ev => {
+  const d = ev.data;
+  if (ev.origin !== location.origin || !d || d.desoto !== "key") return;
+  onKey({key: d.key, ctrlKey: d.ctrlKey, metaKey: d.metaKey, altKey: d.altKey, target: null, preventDefault() {}});
 });
 function renderScanStatus(left) {
   let t = "";

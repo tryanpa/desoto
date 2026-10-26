@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Desoto Split Screen</title>
+<!--
+  One page for a single tall screen: hallway display on top, kiosk underneath.
+    combo.html                    side-up, 50/50 (a normal landscape screen)
+    combo.html?rotate=90          screen turned on its side (use 270 if the picture is upside down)
+    combo.html?split=40           the display gets 40% of the height (20 to 80)
+  Rotation is done here with CSS, so it works under cage, which cannot rotate the screen itself.
+-->
+<style>
+ html,body{margin:0;height:100%;background:#1a1a1a;overflow:hidden}
+ #stage{position:fixed;top:0;left:0;transform-origin:0 0}
+ iframe{display:block;width:100%;border:0;background:#1a1a1a}
+ #top{pointer-events:none}          /* the display is look-only: a touch there must not steal keyboard focus */
+ #sep{height:2px;background:#333}
+</style>
+<div id="stage">
+ <iframe id="top" src="display.html?embed=1" title="Hallway display" tabindex="-1"></iframe>
+ <div id="sep"></div>
+ <iframe id="bottom" src="kiosk.html?embed=1" title="Kiosk"></iframe>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const rot = [90, 180, 270].includes(+q.get("rotate")) ? +q.get("rotate") : 0;
+const split = Math.min(80, Math.max(20, +q.get("split") || 50));
+const top_ = document.getElementById("top"), bottom = document.getElementById("bottom"), stage = document.getElementById("stage");
+
+function fit() {
+  const vw = innerWidth, vh = innerHeight, sideways = rot === 90 || rot === 270;
+  const W = sideways ? vh : vw, H = sideways ? vw : vh;      // the layout's size before it is turned
+  stage.style.width = W + "px"; stage.style.height = H + "px";
+  stage.style.transform = rot === 90 ? `translateX(${vw}px) rotate(90deg)`
+    : rot === 270 ? `translateY(${vh}px) rotate(-90deg)`
+    : rot === 180 ? `translate(${vw}px,${vh}px) rotate(180deg)` : "none";
+  const topH = Math.round((H - 2) * split / 100);
+  top_.style.height = topH + "px"; bottom.style.height = (H - 2 - topH) + "px";
+}
+fit(); addEventListener("resize", fit);
+
+// The scanner is a keyboard: its keystrokes must reach the kiosk frame. Keep that frame focused, and if the
+// keystrokes land here instead, hand them over.
+const focusKiosk = () => { try { bottom.contentWindow.focus(); } catch (e) {} };
+bottom.addEventListener("load", focusKiosk); addEventListener("focus", focusKiosk);
+setInterval(() => { if (document.activeElement !== bottom) focusKiosk(); }, 2000);
+document.addEventListener("keydown", e => bottom.contentWindow.postMessage(
+  {desoto: "key", key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey}, location.origin));
+</script>
