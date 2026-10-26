@@ -142,7 +142,7 @@ If the touch lands in the wrong place, or the screen still sleeps, check Raspber
 jobs. Point the kiosk browser at it instead of `/`:
 
     http://localhost:8000/combo.html                     a normal, upright screen
-    http://localhost:8000/combo.html?rotate=90           screen turned on its side (use rotate=270 if the picture is upside down)
+    http://localhost:8000/combo.html?rotate=90           screen turned on its side (use rotate=270, or rotate=-90, if the picture is turned the wrong way)
     http://localhost:8000/combo.html?rotate=90&split=40  give the display 40% of the height (20 to 80)
 
 With the installer: `./deploy/pi-install.sh --split --rotate 90`. With the `cage` service, put that URL on the `ExecStart` line

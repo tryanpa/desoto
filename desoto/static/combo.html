@@ -3,7 +3,7 @@
 <!--
   One page for a single tall screen: hallway display on top, kiosk underneath.
     combo.html                    side-up, 50/50 (a normal landscape screen)
-    combo.html?rotate=90          screen turned on its side (use 270 if the picture is upside down)
+    combo.html?rotate=90          screen turned on its side (use 270, or -90, if the picture is turned the wrong way)
     combo.html?split=40           the display gets 40% of the height (20 to 80)
   Rotation is done here with CSS, so it works under cage, which cannot rotate the screen itself.
 -->
@@ -21,7 +21,8 @@
 </div>
 <script>
 const q = new URLSearchParams(location.search);
-const rot = [90, 180, 270].includes(+q.get("rotate")) ? +q.get("rotate") : 0;
+const turn = (((+q.get("rotate") || 0) % 360) + 360) % 360;     // 90, 180, 270, or -90 (same as 270)
+const rot = [90, 180, 270].includes(turn) ? turn : 0;
 const split = Math.min(80, Math.max(20, +q.get("split") || 50));
 const top_ = document.getElementById("top"), bottom = document.getElementById("bottom"), stage = document.getElementById("stage");
 
