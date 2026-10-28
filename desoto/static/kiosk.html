@@ -36,14 +36,12 @@
  .pcard.debit,.pcard.block{border-color:var(--over,#e0533f)}
  .ptitle{font-weight:900;font-size:clamp(1.6rem,4vw,2.6rem);line-height:1.15}
  .pcard.warn .ptitle{color:var(--amber)}.pcard.debit .ptitle,.pcard.block .ptitle{color:#ff8a7a}
- .pbody{margin:16px 0 26px;font-weight:700;font-size:clamp(1.1rem,2.4vw,1.6rem);line-height:1.35;color:var(--text)}
- .pok{min-height:64px;padding:0 46px;font-size:1.1rem}
+ .pbody{margin:16px 0 4px;font-weight:700;font-size:clamp(1.1rem,2.4vw,1.6rem);line-height:1.35;color:var(--text)}
 </style>
 <div class="topbar"><div class="brand">Desoto<i>—</i>Kiosk</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
 <div id="popup" hidden role="alertdialog" aria-live="assertive">
- <div class="pcard warn" id="pcard"><div class="ptitle" id="ptitle"></div><div class="pbody" id="pbody"></div>
-  <button class="ghost pok" id="pok" type="button">OK</button></div>
+ <div class="pcard warn" id="pcard"><div class="ptitle" id="ptitle"></div><div class="pbody" id="pbody"></div></div>
 </div>
 <main>
  <div id="tapview">
@@ -72,12 +70,13 @@ let S = null, period = null, idle = null, last = "", leftNow = null;
 const scanMode = () => !!S && S.settings.identify === "scan";
 
 // ---- popup (late return, blocked). Closes on OK, a tap anywhere, or after 20 seconds.
+const POPUP_MS = 5000;
 let popupTimer = null, lateSeen = 0;
 function showPopup(kind, title, body) {
   $("pcard").className = "pcard " + kind;
   $("ptitle").textContent = title; $("pbody").textContent = body;
   $("popup").hidden = false;
-  clearTimeout(popupTimer); popupTimer = setTimeout(closePopup, 20000);
+  clearTimeout(popupTimer); popupTimer = setTimeout(closePopup, POPUP_MS);
 }
 function closePopup() { $("popup").hidden = true; clearTimeout(popupTimer); }
 $("popup").addEventListener("click", closePopup);

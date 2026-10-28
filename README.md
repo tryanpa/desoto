@@ -121,7 +121,7 @@ names and scanning IDs.
   period (**Free late warnings**, default 1) only shows a popup on the kiosk: *"Alex, you are 2:15 late. If you continue to go
   over, your pass bank will be debited."* Each late return after that also takes **Passes taken per late return** (default 1)
   from the bank, and the popup says so and how many are left. Passes never go below zero.
-- **Kiosk only:** the late popup is delivered only to the kiosk, never the hallway display. It closes on OK, a tap, or after 20 s.
+- **Kiosk only:** the late popup is delivered only to the kiosk, never the hallway display. It has no button and clears by itself after 5 seconds (a tap also closes it).
   A teacher's **Mark returned**, a closed runaway trip, and a trip with no student (pass taken without queuing) are never counted as late.
 - **Refills:** add **grading periods** with start and end dates. Every bank refills (and late counts clear) automatically the day a
   new period begins. Passes don't carry over. Adding the period already in progress doesn't refill anyone; press
