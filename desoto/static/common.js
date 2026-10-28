@@ -1,10 +1,10 @@
 // Shared live-state client. Calls onState(state, secondsLeft()) on each tick.
-function connect(onState) {
+function connect(onState, role) {
   let state = null, offset = 0;
   const left = () => state && state.out
     ? state.duration - (Date.now() / 1000 + offset - state.out.started_at) : null;
   function open() {
-    const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws" + (role ? "?role=" + role : ""));
     ws.onmessage = e => { state = JSON.parse(e.data); offset = state.now - Date.now() / 1000; window.srvOffset = offset; };
     ws.onclose = () => setTimeout(open, 1000);
   }

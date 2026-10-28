@@ -38,6 +38,7 @@ the PIN-protected admin endpoints return them. In the admin pages IDs are masked
 - **Live**: what the kiosk shows now: pass status, the queue, **Clear queue**, remove one student,
   and **Mark returned** if the sensor missed a return.
 - **Roster**: import from CSV, add or remove a student. The roster is stored as JSON.
+- **Pass Bank**: pass limits, late penalties, holds and grading periods (off until you turn it on).
 - **Activity Log**: every trip with student, period, ID, out time, in time, date, length and result
   (on time / over time). Filter by date, period or search; export to CSV.
 - **Data**: totals, average / longest trip, over-time counts, trips per day, average length by day,
@@ -107,6 +108,29 @@ set **Simulator and test controls** to **Show**: the kiosk footer then has a box
 What scanning does and doesn't prove: it shows someone has the card, not that they are the student. Cards can be lent or a
 barcode photographed, so it is better than tapping a name, not perfect. A student listed in more than one period is
 treated as the first period listed.
+
+## Pass bank (pass limits, late penalties, holds)
+
+Admin **Pass Bank** page. It is **off by default**; nothing changes until you switch it on. It works the same for tapping
+names and scanning IDs.
+
+- **Every trip costs 1 pass** from the student's bank. Each student starts a refill period with the number you set
+  (**Passes per student**). A student with no passes left, or **on hold**, can't join the line: the kiosk tells them to see you
+  (in scan mode this is the "ID scanned" message; in tap mode a popup).
+- **Late returns:** past the pass length plus a grace time (default 30 s) a return is late. The first late return in a refill
+  period (**Free late warnings**, default 1) only shows a popup on the kiosk: *"Alex, you are 2:15 late. If you continue to go
+  over, your pass bank will be debited."* Each late return after that also takes **Passes taken per late return** (default 1)
+  from the bank, and the popup says so and how many are left. Passes never go below zero.
+- **Kiosk only:** the late popup is delivered only to the kiosk, never the hallway display. It closes on OK, a tap, or after 20 s.
+  A teacher's **Mark returned**, a closed runaway trip, and a trip with no student (pass taken without queuing) are never counted as late.
+- **Refills:** add **grading periods** with start and end dates. Every bank refills (and late counts clear) automatically the day a
+  new period begins. Passes don't carry over. Adding the period already in progress doesn't refill anyone; press
+  **Refill all banks now** for that. Holds are kept through a refill.
+- **Holds:** **Hold** takes a student's pass privilege away (optional private note) and removes them from the line; **Resume** gives it back.
+- **Teacher tools:** −1, +1 and Set… per student, a **History** for every student (each trip, late return, adjustment, refill and hold with
+  the reason and balance), filters for low / none left / on hold, and a CSV export. **Live → Add a student by name → Start trip now**
+  works even at zero passes (it still uses a pass if any are left) so you can always override.
+- **Banks follow the student ID** (or period + name when there is no ID), so they survive re-importing the roster.
 
 ## Raspberry Pi setup (kiosk + hallway display)
 

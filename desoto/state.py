@@ -1,9 +1,11 @@
 """Pass state machine: a queue of students and at most one student out."""
 import re
 import time
+from datetime import date
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
+from .bank import Bank
 from .db import TripLog
 
 DEFAULT_DURATION = 7 * 60
@@ -18,9 +20,16 @@ CHOICES = {
     "scan_strict": ON_OFF,                        # kiosk ignores IDs typed by hand (scanners type very fast)
     "call_timeout": ("0", "30", "60", "120", "300"),   # seconds a called student has to scan; 0 = never skip
     "max_trip_minutes": ("10", "15", "30", "60"),      # a trip with no return scan is closed after this long
+    "bank_enabled": ON_OFF,                       # pass bank: limits, late penalties and holds
 }
+# Numeric settings: (lowest, highest) whole number
+RANGES = {"bank_size": (1, 99),       # passes each student gets when banks refill
+          "late_grace": (0, 600),     # seconds past the pass length that still count as on time
+          "late_warnings": (0, 10),   # late returns per refill period that only get a warning
+          "late_debit": (0, 10)}      # passes taken for each late return after the warnings
 DEFAULTS = {"bar_style": "thick", "simulator": "on", "test_controls": "show", "identify": "tap", "scan_strict": "on",
-            "call_timeout": "60", "max_trip_minutes": "30"}
+            "call_timeout": "60", "max_trip_minutes": "30",
+            "bank_enabled": "off", "bank_size": "8", "late_grace": "30", "late_warnings": "1", "late_debit": "1"}
 MAX_UNKNOWN_SCANS = 20     # unrecognised scans per minute before scanning pauses (stops ID guessing)
 
 # A student is identified by (class period, name): names can repeat across periods.
@@ -53,7 +62,12 @@ class PassState:
     queue_method: Dict[Student, str] = field(default_factory=dict)  # how each queued student identified
     called_at: Optional[float] = None   # scan mode: when the pass became free for the student at the front
     notice: Optional[dict] = None       # short message for the display, e.g. a skipped student
+    bank: Optional[Bank] = None
+    late_notice: Optional[dict] = None  # kiosk-only popup: "you are 2:15 late..."
+    _late_n: int = 0
     _fails: List[float] = field(default_factory=list)
+    _checked_day: Optional[date] = None
+    last_late: Optional[dict] = None
 
     def __post_init__(self) -> None:
         self.settings.setdefault("pass_seconds", str(self.duration))
@@ -97,10 +111,18 @@ class PassState:
                 self.settings[key] = str(int(value))
                 return True
             return False
+        if key in RANGES:
+            lo, hi = RANGES[key]
+            if isinstance(value, str) and value.isdigit() and lo <= int(value) <= hi:
+                self.settings[key] = str(int(value))
+                return True
+            return False
         if key in CHOICES and value in CHOICES[key]:
             self.settings[key] = value
             if key == "identify":
                 self.called_at = None
+            if key == "bank_enabled":
+                self._checked_day = None
             return True
         return False
 
@@ -147,10 +169,73 @@ class PassState:
         self.called_at = None
         if self.log:
             self.out.log_id = self.log.open_trip(who[0], who[1], self.ids.get(who, ""), now, self.duration, method)
+        if self.bank_on and who[0]:   # every trip costs one pass (a teacher override at zero stays at zero)
+            self.bank.adjust(who[0], who[1], self.ids.get(who, ""), -1, "trip", now, self._default_bank(), note=method)
+
+    # -- pass bank --------------------------------------------------------
+    @property
+    def bank_on(self) -> bool:
+        return self.bank is not None and self.settings["bank_enabled"] == "on"
+
+    def _default_bank(self) -> int:
+        return int(self.settings["bank_size"])
+
+    def bank_row(self, who: Student) -> dict:
+        return self.bank.get(who[0], who[1], self.ids.get(who, ""), self._default_bank())
+
+    def blocked_reason(self, who: Student) -> Optional[str]:
+        """"paused" (privilege on hold) or "no_passes" (bank empty); None if the student may take a pass or the bank is off."""
+        if not self.bank_on or not who[0]:
+            return None
+        row = self.bank_row(who)
+        if row["hold"]:
+            return "paused"
+        return "no_passes" if row["remaining"] <= 0 else None
+
+    def refill_banks(self, note: str = "Manual refill") -> int:
+        """Everyone's bank back to the full amount, late counts cleared (holds are kept). Returns how many students."""
+        n = self.bank.refill_all(self.roster_full(), self._default_bank(), self.clock(), note)
+        cur = self.bank.current_period(date.fromtimestamp(self.clock()))
+        if cur:
+            self.bank.set_meta("applied_period", str(cur["id"]))
+        return n
+
+    def recheck_periods(self) -> None:
+        self._checked_day = None
+
+    def _maybe_refill(self, now: float) -> bool:
+        """A new grading period has started: refill every bank, once."""
+        today = date.fromtimestamp(now)
+        if self._checked_day == today:
+            return False
+        self._checked_day = today
+        cur = self.bank.current_period(today)
+        if cur and self.bank.meta("applied_period") != str(cur["id"]):
+            self.refill_banks(f"New grading period: {cur['name']}")
+            return True
+        return False
+
+    def _apply_late(self, who: Student, over: int, now: float) -> dict:
+        """A late return: the first few (late_warnings) only warn, each one after that costs late_debit passes."""
+        sid, default = self.ids.get(who, ""), self._default_bank()
+        lates = self.bank.add_late(who[0], who[1], sid, now, default, note=f"{over // 60}:{over % 60:02d} late")
+        debited = 0
+        if lates > int(self.settings["late_warnings"]) and int(self.settings["late_debit"]) > 0:
+            r = self.bank.adjust(who[0], who[1], sid, -int(self.settings["late_debit"]), "late debit", now, default,
+                                 note=f"{over // 60}:{over % 60:02d} late (late return #{lates})")
+            debited = -r["delta"]
+        return {"seconds": over, "lates": lates, "debited": debited, "remaining": self.bank_row(who)["remaining"]}
 
     def _end_trip(self, source: str) -> int:
         now, trip = self.clock(), self.out
         secs = round(now - trip.started_at)
+        self.last_late = None
+        if self.bank_on and trip.student[0] and source in ("sensor", "scan"):   # a teacher's "Mark returned" is never a penalty
+            over = secs - trip.allowed
+            if over > int(self.settings["late_grace"]):
+                self.last_late = self._apply_late(trip.student, over, now)
+                self._late_n += 1
+                self.late_notice = dict(self.last_late, student=trip.student[1], period=trip.student[0], n=self._late_n, until=now + 20)
         self.history.append({"period": trip.student[0], "student": trip.student[1],
                              "started_at": trip.started_at, "seconds": secs})
         if self.log and trip.log_id is not None:
@@ -211,19 +296,26 @@ class PassState:
         if self.out and self.out.student == who:
             allowed = self.out.allowed
             secs = self._end_trip("scan")
-            return {**res, "result": "returned", "seconds": secs, "over": secs > allowed}
+            return {**res, "result": "returned", "seconds": secs, "over": secs > allowed, "late": self.last_late,
+                    "remaining": self.bank_row(who)["remaining"] if self.bank_on else None}
+        reason = self.blocked_reason(who)
+        if reason:                                    # on hold, or out of passes: not even in the line
+            if who in self.queue:
+                self.queue.remove(who)
+                self.queue_method.pop(who, None)
+            return {**res, "result": reason}
         if who in self.queue:
             pos = self.queue.index(who) + 1
             if self.out is None and pos == 1:
                 self.queue.pop(0)
                 self.queue_method.pop(who, None)
                 self._start_trip(who, "scan")
-                return {**res, "result": "started"}
+                return {**res, "result": "started", "remaining": self.bank_row(who)["remaining"] if self.bank_on else None}
             return {**res, "result": "waiting", "position": pos, "busy": self.out is not None,
                     "next": self.queue[0][1] if pos > 1 else None}
         if self.out is None and not self.queue:
             self._start_trip(who, "scan")
-            return {**res, "result": "started"}
+            return {**res, "result": "started", "remaining": self.bank_row(who)["remaining"] if self.bank_on else None}
         self.queue.append(who)
         self.queue_method[who] = "scan"
         return {**res, "result": "queued", "position": len(self.queue)}
@@ -244,6 +336,10 @@ class PassState:
         now, changed = self.clock(), False
         if self.notice and now >= self.notice["until"]:
             self.notice, changed = None, True
+        if self.late_notice and now >= self.late_notice["until"]:
+            self.late_notice, changed = None, True
+        if self.bank_on and self._maybe_refill(now):
+            changed = True
         if not self.scan_mode:
             return changed
         timeout = int(self.settings["call_timeout"])
@@ -269,8 +365,9 @@ class PassState:
             changed = True
         return changed
 
-    def snapshot(self) -> dict:
-        """Public state for the kiosk and hallway display. Must never contain student IDs."""
+    def snapshot(self, kiosk: bool = False) -> dict:
+        """Public state for the kiosk and hallway display. Must never contain student IDs.
+        The late-return popup is only included for the kiosk (kiosk=True), never for the hallway display."""
         person = lambda s: {"period": s[0], "student": s[1]}
         timeout = int(self.settings["call_timeout"])
         called = None
@@ -288,4 +385,6 @@ class PassState:
             "sensor": self.sensor_configured,
             "called": called,
             "notice": self.notice["text"] if self.notice else None,
+            "late_notice": ({k: v for k, v in self.late_notice.items() if k != "until"}
+                            if kiosk and self.late_notice else None),
         }

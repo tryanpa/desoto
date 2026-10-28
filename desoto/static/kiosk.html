@@ -30,9 +30,21 @@
  #scanMsg.bad{background:var(--red-bg);color:#ff8a7a;border-color:#5c2b27}
  #scanNext{color:var(--ink2,#b8b8b8);font-weight:700;font-size:1.15rem;min-height:1.5em}
  #scanTest{display:flex;align-items:center;gap:10px}#scanTest input{width:150px;padding:8px 10px}
+ /* Popup: late return / blocked (only ever shown on the kiosk) */
+ #popup{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.74);display:flex;align-items:center;justify-content:center;padding:24px}
+ .pcard{width:min(760px,100%);background:var(--panel);border:3px solid var(--amber);border-radius:22px;padding:34px 40px;text-align:center}
+ .pcard.debit,.pcard.block{border-color:var(--over,#e0533f)}
+ .ptitle{font-weight:900;font-size:clamp(1.6rem,4vw,2.6rem);line-height:1.15}
+ .pcard.warn .ptitle{color:var(--amber)}.pcard.debit .ptitle,.pcard.block .ptitle{color:#ff8a7a}
+ .pbody{margin:16px 0 26px;font-weight:700;font-size:clamp(1.1rem,2.4vw,1.6rem);line-height:1.35;color:var(--text)}
+ .pok{min-height:64px;padding:0 46px;font-size:1.1rem}
 </style>
 <div class="topbar"><div class="brand">Desoto<i>—</i>Kiosk</div><div class="clock" id="clock"></div>
  <div class="pill" id="pill"><span class="dot"></span><span id="pillText">…</span></div></div>
+<div id="popup" hidden role="alertdialog" aria-live="assertive">
+ <div class="pcard warn" id="pcard"><div class="ptitle" id="ptitle"></div><div class="pbody" id="pbody"></div>
+  <button class="ghost pok" id="pok" type="button">OK</button></div>
+</div>
 <main>
  <div id="tapview">
   <div class="head"><button class="ghost" id="back" hidden onclick="show(null)">← Periods</button><h1 id="h1"></h1></div>
@@ -58,6 +70,26 @@ startClock($("clock"));
 
 let S = null, period = null, idle = null, last = "", leftNow = null;
 const scanMode = () => !!S && S.settings.identify === "scan";
+
+// ---- popup (late return, blocked). Closes on OK, a tap anywhere, or after 20 seconds.
+let popupTimer = null, lateSeen = 0;
+function showPopup(kind, title, body) {
+  $("pcard").className = "pcard " + kind;
+  $("ptitle").textContent = title; $("pbody").textContent = body;
+  $("popup").hidden = false;
+  clearTimeout(popupTimer); popupTimer = setTimeout(closePopup, 20000);
+}
+function closePopup() { $("popup").hidden = true; clearTimeout(popupTimer); }
+$("popup").addEventListener("click", closePopup);
+const lateText = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+function lateNotice(n) {
+  if (!n || n.n === lateSeen) return;
+  lateSeen = n.n;
+  const taken = n.debited;
+  showPopup(taken ? "debit" : "warn", `${n.student}, you are ${lateText(n.seconds)} late`,
+    taken ? `${taken} extra pass${taken === 1 ? " was" : "es were"} taken from your pass bank. You have ${n.remaining} left.`
+          : "If you continue to go over, your pass bank will be debited.");
+}
 
 // ---- ID scan mode: a USB scanner types the ID and presses Enter, like a very fast keyboard.
 let idleTimer = null, wasScan = false, buf = "", times = [], lastCode = "", lastCodeAt = 0, msgTimer = null;
@@ -127,8 +159,9 @@ function show(p) {
 let flash = "", flashTimer = null;
 function say(msg) { flash = msg; clearTimeout(flashTimer); flashTimer = setTimeout(() => flash = "", 4000); }
 function join(p, n) {
-  post("/api/queue", {period: p, student: n}).then(r => r.json()).then(st => {
-    say(`${n} added — #${st.queue.findIndex(q => same(p, n, q)) + 1} in line`); show(null); });
+  post("/api/queue", {period: p, student: n}).then(r => r.json().then(st => {
+    if (r.status === 409 && st.reason) { showPopup("block", n, st.message.replace(n + ", ", "").replace(/^./, c => c.toUpperCase())); show(null); return; }
+    say(`${n} added — #${st.queue.findIndex(q => same(p, n, q)) + 1} in line`); show(null); }));
 }
 function leave(p, n) {
   post("/api/queue/" + encodeURIComponent(p) + "/" + encodeURIComponent(n), null, "DELETE").then(() => { say(`${n} removed from line`); show(null); });
@@ -191,12 +224,12 @@ function render() {
 }
 if (location.hash.length > 1) show(decodeURIComponent(location.hash.slice(1)));  // e.g. /#3 opens period 3
 connect((s, left) => {
-  S = s; leftNow = left; setPill(s);
+  S = s; leftNow = left; setPill(s); lateNotice(s.late_notice);
   const controls = s.settings.test_controls === "show";   // Settings -> Simulator and test controls
   $("sim").hidden = !(controls && s.settings.simulator === "on" && !scanMode());   // Take pass / Return pass (tap mode)
   $("scanTest").hidden = !(controls && scanMode());                                // type-an-ID box (scan mode)
   if (scanMode()) renderScanStatus(left);
   $("status").textContent = flash ? flash : s.out ? `${s.out.student} is out — ${fmt(left)}` : "Waiting — pass available";
   render();
-});
+}, "kiosk");
 </script>

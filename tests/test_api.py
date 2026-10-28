@@ -320,3 +320,104 @@ def test_split_screen_page_is_served(env):
     c, _, _ = env()
     r = c.get("/combo.html")
     assert r.status_code == 200 and "display.html?embed=1" in r.text and "kiosk.html?embed=1" in r.text
+
+
+# ------------------------------------------------------------------- pass bank
+def bank_client(env, pin=None):
+    c, state, p = env(pin)
+    h = {"X-Admin-Pin": pin} if pin else {}
+    assert c.put("/api/admin/settings", json={"bank_enabled": "on", "bank_size": "3"}, headers=h).status_code == 200
+    return c, state, h
+
+
+def test_bank_endpoints_need_the_pin(env):
+    c, _, _ = env("1234")
+    for method, url, body in [("get", "/api/admin/bank", None), ("get", "/api/admin/bank.csv", None),
+                              ("post", "/api/admin/bank/adjust", {"period": "1", "name": "Ava Johnson", "delta": 1}),
+                              ("post", "/api/admin/bank/hold", {"period": "1", "name": "Ava Johnson", "hold": True}),
+                              ("post", "/api/admin/bank/refill", {}), ("get", "/api/admin/bank/ledger?period=1&name=Ava Johnson", None),
+                              ("post", "/api/admin/bank/periods", {"name": "Q1", "start": "2027-01-01", "end": "2027-02-01"}),
+                              ("delete", "/api/admin/bank/periods/1", None)]:
+        r = getattr(c, method)(url, **({"json": body} if body is not None else {}))
+        assert r.status_code == 401, url
+
+
+def test_bank_overview_adjust_hold_refill_ledger_and_csv(env):
+    c, state, h = bank_client(env)
+    d = c.get("/api/admin/bank").json()
+    assert d["enabled"] and d["settings"]["bank_size"] == "3" and [s["remaining"] for s in d["students"]] == [3, 3]
+    assert d["students"][0]["id"] == "1234567"                              # admins see IDs
+    r = c.post("/api/admin/bank/adjust", json={"period": "1", "name": "Ava Johnson", "delta": -5, "note": "oops"}).json()
+    assert r == {"delta": -3, "remaining": 0}                               # never below zero
+    assert c.post("/api/admin/bank/adjust", json={"period": "1", "name": "Ava Johnson", "delta": 500}).status_code == 422
+    assert c.post("/api/admin/bank/adjust", json={"period": "1", "name": "Nobody", "delta": 1}).status_code == 404
+    c.post("/api/queue", json={"period": "1", "student": "Ben Carter"})
+    assert c.post("/api/admin/bank/hold", json={"period": "1", "name": "Ben Carter", "hold": True, "note": "talk to me"}).status_code == 200
+    assert state.queue == []                                                # a hold also removes them from the line
+    led = c.get("/api/admin/bank/ledger", params={"period": "1", "name": "Ben Carter"}).json()["rows"]
+    assert led[0]["reason"] == "hold" and led[0]["note"] == "talk to me"
+    csv = c.get("/api/admin/bank.csv").text
+    assert "Ava Johnson" in csv and "on hold" in csv and "talk to me" in csv
+    assert c.post("/api/admin/bank/refill").json() == {"students": 2}
+    d = c.get("/api/admin/bank").json()
+    assert [s["remaining"] for s in d["students"]] == [3, 3] and d["students"][1]["hold"] is True
+
+
+def test_grading_periods_api(env):
+    c, state, h = bank_client(env)
+    assert c.post("/api/admin/bank/periods", json={"name": "Q", "start": "2027-02-01", "end": "2027-01-01"}).status_code == 422
+    assert c.post("/api/admin/bank/periods", json={"name": "Q", "start": "nope", "end": "2027-01-01"}).status_code == 422
+    pid = c.post("/api/admin/bank/periods", json={"name": "Q1", "start": "2000-01-01", "end": "2999-12-31"}).json()["id"]
+    d = c.get("/api/admin/bank").json()
+    assert [(p["name"], p["status"]) for p in d["periods"]] == [("Q1", "current")]
+    c.post("/api/admin/bank/adjust", json={"period": "1", "name": "Ava Johnson", "delta": -2})
+    assert state.tick() is False                                            # adding the period already in effect refills nobody
+    assert c.get("/api/admin/bank").json()["students"][0]["remaining"] == 1
+    assert c.post("/api/admin/bank/refill").json() == {"students": 2}      # ...use "Refill all banks now" for that
+    assert c.get("/api/admin/bank").json()["students"][0]["remaining"] == 3
+    c.post("/api/admin/bank/periods", json={"name": "Later", "start": "2998-01-01", "end": "2998-06-01"})
+    c.post("/api/admin/bank/adjust", json={"period": "1", "name": "Ava Johnson", "delta": -1})
+    assert state.tick() is False and c.get("/api/admin/bank").json()["students"][0]["remaining"] == 2   # a future period does nothing yet
+    assert c.delete(f"/api/admin/bank/periods/{pid}").status_code == 200 and c.delete(f"/api/admin/bank/periods/{pid}").status_code == 404
+
+
+def test_tap_mode_blocked_student_gets_a_clear_answer(env):
+    c, state, h = bank_client(env)
+    c.post("/api/admin/bank/hold", json={"period": "1", "name": "Ava Johnson", "hold": True})
+    r = c.post("/api/queue", json={"period": "1", "student": "Ava Johnson"})
+    assert r.status_code == 409 and r.json()["reason"] == "paused" and "see your teacher" in r.json()["message"]
+    assert "1234567" not in r.text and state.queue == []
+    c.post("/api/admin/bank/adjust", json={"period": "1", "name": "Ben Carter", "delta": -9})
+    r = c.post("/api/queue", json={"period": "1", "student": "Ben Carter"})
+    assert r.status_code == 409 and r.json()["reason"] == "no_passes" and "no passes left" in r.json()["message"]
+    c.put("/api/admin/settings", json={"bank_enabled": "off"})
+    assert c.post("/api/queue", json={"period": "1", "student": "Ava Johnson"}).status_code == 200     # bank off: no limits
+
+
+def test_scan_messages_for_the_bank(env):
+    c, state, h = bank_client(env)
+    c.put("/api/admin/settings", json={"identify": "scan"})
+    m = c.post("/api/scan", json={"id": "1234567"}).json()
+    assert m["result"] == "started" and "2 passes left" in m["message"] and "1234567" not in m["message"]
+    c.post("/api/scan", json={"id": "1234567"})
+    c.post("/api/admin/bank/hold", json={"period": "1", "name": "Ava Johnson", "hold": True})
+    m = c.post("/api/scan", json={"id": "1234567"}).json()
+    assert m["result"] == "paused" and "on hold" in m["message"] and "see your teacher" in m["message"]
+    c.post("/api/admin/bank/adjust", json={"period": "1", "name": "Ben Carter", "delta": -9})
+    m = c.post("/api/scan", json={"id": "7654321"}).json()
+    assert m["result"] == "no_passes" and "no passes left" in m["message"]
+
+
+def test_late_popup_goes_to_the_kiosk_connection_only(env):
+    c, state, h = bank_client(env)
+    c.post("/api/queue", json={"period": "1", "student": "Ava Johnson"})
+    c.post("/api/sim/docked", json={"docked": False})
+    state.out.started_at -= 600                                             # 10 minutes ago: 3:00 over the 7:00 pass
+    with c.websocket_connect("/ws?role=kiosk") as kiosk, c.websocket_connect("/ws") as display:
+        kiosk.receive_json(); display.receive_json()
+        c.post("/api/sim/docked", json={"docked": True})
+        k, d = kiosk.receive_json(), display.receive_json()
+    late = k["late_notice"]
+    assert late["student"] == "Ava Johnson" and late["seconds"] == 180 and late["debited"] == 0 and late["n"] == 1
+    assert d["late_notice"] is None and c.get("/api/state").json()["late_notice"] is None
+    assert "1234567" not in json.dumps(k)

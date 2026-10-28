@@ -376,6 +376,101 @@ views.activity = async alive => {
   await load();
 };
 
+// ---------------------------------------------------------------- Pass Bank
+const fBank = {q: "", period: "", show: ""};
+views.bank = async alive => {
+  const view = $("view");
+  let d = await api("/api/admin/bank"); if (!alive()) return;
+  const msg = h("div", {class: "help", style: "min-height:1.4em;margin-bottom:12px"});
+  const flash = (t, bad) => { msg.textContent = t; msg.style.color = bad ? "var(--over)" : "var(--green)"; setTimeout(() => { msg.textContent = ""; }, 4000); };
+  const reload = async () => { d = await api("/api/admin/bank"); if (alive()) { drawSettings(); drawPeriods(); drawStudents(); } };
+  const act = async (fn, ok) => { try { await fn(); if (ok) flash(ok); await reload(); } catch (e) { flash(errText(e), true); } };
+  const save = (field, value) => act(() => api("/api/admin/settings", {method: "PUT", body: {[field]: String(value)}}), "Saved");
+
+  // ---- settings
+  const settingsBody = h("div", {class: "body"});
+  function drawSettings() {
+    const st = d.settings, on = st.bank_enabled === "on";
+    const num = (label, field, min, max, hint) => h("label", {class: "field"}, h("span", null, label),
+      h("input", {type: "number", min, max, value: st[field], style: "width:110px", onchange: e => save(field, e.target.value)}),
+      hint ? h("div", {class: "help", style: "max-width:220px"}, hint) : null);
+    settingsBody.replaceChildren(
+      h("div", {class: "row", style: "margin-bottom:16px"},
+        h("div", {class: "seg"}, [["off", "Off"], ["on", "On"]].map(([v, t]) => h("button", {type: "button", class: (on ? "on" : "off") === v ? "on" : "", onclick: () => save("bank_enabled", v)}, t))),
+        h("div", {class: "help grow"}, on ? "Pass limits are being enforced for tap and scan." : "Off: nothing below is enforced. Students can take any number of passes and lateness is not counted.")),
+      h("div", {class: "row", style: "align-items:flex-start"},
+        num("Passes per student", "bank_size", 1, 99, "What every student gets when banks refill."),
+        num("Grace (seconds)", "late_grace", 0, 600, "Seconds past the pass length that still count as on time."),
+        num("Free late warnings", "late_warnings", 0, 10, "Late returns per refill period that only get a warning."),
+        num("Passes taken per late return", "late_debit", 0, 10, "Taken for each late return after the warnings.")),
+      h("div", {class: "help", style: "margin-top:14px"}, `Every trip costs 1 pass. The first ${st.late_warnings} late return${st.late_warnings === "1" ? "" : "s"} in a refill period only show a warning on the kiosk; after that each late return also costs ${st.late_debit} pass${st.late_debit === "1" ? "" : "es"}. Passes never go below zero. A student with no passes, or on hold, is told to see you. A teacher's "Mark returned" is never counted as late.`));
+  }
+
+  // ---- grading periods
+  const periodsBody = h("div");
+  const nameIn = h("input", {placeholder: "Name, e.g. Quarter 2", "aria-label": "Name"}), startIn = h("input", {type: "date", "aria-label": "Start"}), endIn = h("input", {type: "date", "aria-label": "End"});
+  function drawPeriods() {
+    periodsBody.replaceChildren(
+      d.periods.length ? table([{label: "Name"}, {label: "Starts"}, {label: "Ends"}, {label: ""}, {label: ""}], d.periods.map(p => h("tr", null,
+        h("td", {class: "name"}, p.name), h("td", {class: "mono"}, p.start), h("td", {class: "mono"}, p.end),
+        h("td", null, p.status === "current" ? badge("Current", "ok") : p.status === "past" ? badge("Past", "") : badge("Upcoming", "warn")),
+        h("td", {class: "num"}, btn("Remove", () => { if (confirm(`Remove ${p.name}?`)) act(() => api(`/api/admin/bank/periods/${p.id}`, {method: "DELETE"})); }, "sm danger")))))
+        : h("div", {class: "empty"}, "No grading periods yet. Add one and the banks refill by themselves when it starts."),
+      h("div", {class: "body"}, h("div", {class: "row"}, nameIn, startIn, h("span", {class: "help"}, "to"), endIn,
+        btn("Add period", () => act(async () => { await api("/api/admin/bank/periods", {method: "POST", body: {name: nameIn.value, start: startIn.value, end: endIn.value}}); nameIn.value = startIn.value = endIn.value = ""; }, "Grading period added"), "primary"),
+        h("div", {class: "grow"}),
+        btn("Refill all banks now", () => { if (confirm(`Give every student ${d.settings.bank_size} passes and clear their late counts? Holds stay.`)) act(async () => { const r = await api("/api/admin/bank/refill", {method: "POST"}); flash(`Refilled ${r.students} students`); }); }, "danger")),
+        h("div", {class: "help", style: "margin-top:10px"}, "Banks refill automatically the day a period begins. Passes do not carry over. Adding the period that is already in progress does not refill anyone; use the button for that.")));
+  }
+
+  // ---- students
+  const listBody = h("div", {class: "scroll", style: "max-height:560px"}), histBox = h("div");
+  const who = s => ({period: s.period, name: s.name});
+  async function showHistory(s) {
+    try {
+      const r = await api("/api/admin/bank/ledger?" + qs(who(s)));
+      const c = card(`History: ${s.name}`, btn("Close", () => histBox.replaceChildren(), "sm"));
+      c.append(r.rows.length ? h("div", {class: "scroll", style: "max-height:300px"}, table([{label: "When"}, {label: "Change", num: true}, {label: "Left", num: true}, {label: "Why"}, {label: "Note"}],
+        r.rows.map(e => h("tr", null, h("td", {class: "mono"}, dstr(e.at) + " " + tstr(e.at)), h("td", {class: "num", style: e.delta < 0 ? "color:var(--over)" : e.delta > 0 ? "color:var(--green)" : ""}, e.delta > 0 ? "+" + e.delta : e.delta),
+          h("td", {class: "num"}, e.balance), h("td", null, e.reason), h("td", {class: "help"}, e.note))))) : empty("No history yet."));
+      histBox.replaceChildren(c);
+    } catch (e) { flash(errText(e), true); }
+  }
+  function drawStudents() {
+    const q = fBank.q.toLowerCase();
+    const rows = d.students.filter(s => (!fBank.period || s.period === fBank.period) && (!q || s.name.toLowerCase().includes(q) || s.id.includes(q))
+      && (fBank.show === "" || (fBank.show === "low" && s.remaining <= 2 && s.remaining > 0) || (fBank.show === "none" && s.remaining === 0) || (fBank.show === "hold" && s.hold)));
+    listBody.replaceChildren(rows.length ? table([{label: "Student"}, {label: "Period"}, showIds ? {label: "ID"} : null, {label: "Passes left", num: true}, {label: "Late returns", num: true}, {label: "Status"}, {label: ""}].filter(Boolean),
+      rows.map(s => h("tr", null, h("td", {class: "name"}, s.name), h("td", null, "Period " + s.period), showIds ? h("td", {class: "mono"}, idText(s.id)) : null,
+        h("td", {class: "num"}, badge(String(s.remaining), s.remaining === 0 ? "over" : s.remaining <= 2 ? "warn" : "ok")),
+        h("td", {class: "num"}, s.lates || "0"),
+        h("td", null, s.hold ? badge("On hold", "over", s.note || "") : badge("Active", ""), s.hold && s.note ? h("span", {class: "help", style: "margin-left:8px"}, s.note) : null),
+        h("td", {class: "num", style: "white-space:nowrap"},
+          btn("−1", () => act(() => api("/api/admin/bank/adjust", {method: "POST", body: {...who(s), delta: -1}})), "sm"), " ",
+          btn("+1", () => act(() => api("/api/admin/bank/adjust", {method: "POST", body: {...who(s), delta: 1}})), "sm"), " ",
+          btn("Set…", () => { const v = prompt(`Passes for ${s.name}`, String(s.remaining)); if (v === null) return; const n = parseInt(v, 10);
+            if (isNaN(n) || n < 0 || n > 99) return flash("Enter a number from 0 to 99", true);
+            act(() => api("/api/admin/bank/adjust", {method: "POST", body: {...who(s), delta: n - s.remaining, note: "Set by teacher"}})); }, "sm"), " ",
+          s.hold ? btn("Resume", () => act(() => api("/api/admin/bank/hold", {method: "POST", body: {...who(s), hold: false}}), `${s.name} can take passes again`), "sm primary")
+                 : btn("Hold", () => { const n = prompt(`Put ${s.name}'s pass privilege on hold? Optional note (only you see it):`, ""); if (n === null) return;
+                     act(() => api("/api/admin/bank/hold", {method: "POST", body: {...who(s), hold: true, note: n}}), `${s.name} is on hold`); }, "sm danger"), " ",
+          btn("History", () => showHistory(s), "sm"))))) : empty("No students match."));
+  }
+  const search = h("input", {type: "search", placeholder: "Search name or ID", "aria-label": "Search", oninput: e => { fBank.q = e.target.value; drawStudents(); }});
+  const psel = h("select", {"aria-label": "Period", onchange: e => { fBank.period = e.target.value; drawStudents(); }}, h("option", {value: ""}, "All periods"),
+    Object.keys(d.students.reduce((o, s) => (o[s.period] = 1, o), {})).sort((a, b) => a - b).map(p => h("option", {value: p, selected: fBank.period === p}, "Period " + p)));
+  const ssel = h("select", {"aria-label": "Show", onchange: e => { fBank.show = e.target.value; drawStudents(); }},
+    [["", "Everyone"], ["low", "Low (1 or 2 left)"], ["none", "None left"], ["hold", "On hold"]].map(([v, t]) => h("option", {value: v, selected: fBank.show === v}, t)));
+  const exp = btn("Export CSV", async () => { try { await download("/api/admin/bank.csv", "desoto-pass-bank.csv"); } catch (e) { flash(errText(e), true); } });
+  const studentsCard = card("Students", search, psel, ssel, exp);
+  studentsCard.append(listBody);
+  const settingsCard = card("Rules"); settingsCard.append(settingsBody);
+  const periodsCard = card("Grading periods"); periodsCard.append(periodsBody);
+  view.append(h("h2", null, "Pass Bank"), h("div", {class: "lead"}, "How many passes each student has, who is on hold, and what late returns cost"), msg, settingsCard, periodsCard, histBox, studentsCard);
+  current.onIds = drawStudents;
+  drawSettings(); drawPeriods(); drawStudents();
+};
+
 // --------------------------------------------------------------------- Data
 const fData = {preset: "30", start: "", end: "", period: ""};
 views.data = async alive => {

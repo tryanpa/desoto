@@ -5,7 +5,7 @@ import json
 import os
 import secrets
 import shutil
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import power
+from .bank import Bank
 from . import roster as rosterlib
 from . import stats
 from .db import TripLog
@@ -45,15 +46,26 @@ def _csv_response(name: str, header, rows) -> Response:
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+BLOCKED = {"paused": "your pass privilege is on hold", "no_passes": "you have no passes left"}
+
+
+def block_message(name: str, reason: str) -> str:
+    return f"{name}, {BLOCKED[reason]}. Please see your teacher."
+
+
 def scan_message(r: dict) -> str:
     """Words for the kiosk after a scan. Never includes the ID."""
     name = r.get("student", "")
     code = r["result"]
+    left = r.get("remaining")
     if code == "started":
-        return f"{name}: your trip has started. Scan again when you are back."
+        bank = "" if left is None else f" {left} pass{'' if left == 1 else 'es'} left."
+        return f"{name}: your trip has started.{bank} Scan again when you are back."
     if code == "returned":
         s = r["seconds"]
         return f"Welcome back, {name}. Trip time {s // 60}:{s % 60:02d}" + (" (over time)." if r["over"] else ".")
+    if code in BLOCKED:
+        return block_message(name, code)
     if code == "queued":
         return f"{name}: you are #{r['position']} in line."
     if code == "waiting":
@@ -82,6 +94,7 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         log = TripLog(data / "trips.db")
     if log is not None:
         state.log = log
+        state.bank = Bank(log)
     default_seconds = state.duration   # from DESOTO_SECONDS; a length chosen in Settings overrides it
     saved = json.loads(settings_path.read_text()) if settings_path and settings_path.exists() else {}
     for k, v in saved.items():
@@ -96,15 +109,14 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
 
     app = FastAPI(title="Desoto")
     app.state.pass_state = state
-    clients: set = set()
+    clients: dict = {}   # websocket -> "kiosk" or ""
 
     async def broadcast() -> None:
-        msg = state.snapshot()
-        for ws in list(clients):
+        for ws, role in list(clients.items()):
             try:
-                await ws.send_json(msg)
+                await ws.send_json(state.snapshot(kiosk=(role == "kiosk")))
             except Exception:
-                clients.discard(ws)
+                clients.pop(ws, None)
 
     monitor = SensorMonitor()
     app.state.monitor = monitor
@@ -162,6 +174,10 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
     async def join(who: Who):
         if state.scan_mode:
             raise HTTPException(403, "Students scan their ID card to join the queue")
+        reason = state.blocked_reason((who.period, who.student))
+        if reason:
+            return JSONResponse({"detail": block_message(who.student, reason), "reason": reason,
+                                 "message": block_message(who.student, reason)}, status_code=409)
         if not state.join(who.period, who.student):
             raise HTTPException(409, "Not on roster, already queued, or already out")
         await broadcast()
@@ -201,13 +217,13 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
     @app.websocket("/ws")
     async def ws(socket: WebSocket):
         await socket.accept()
-        clients.add(socket)
-        await socket.send_json(state.snapshot())
+        clients[socket] = "kiosk" if socket.query_params.get("role") == "kiosk" else ""
+        await socket.send_json(state.snapshot(kiosk=(clients[socket] == "kiosk")))
         try:
             while True:
                 await socket.receive_text()
         except WebSocketDisconnect:
-            clients.discard(socket)
+            clients.pop(socket, None)
 
     # ----------------------------------------------------------------- admin
     def require_pin(x_admin_pin: Optional[str] = Header(None)):
@@ -233,6 +249,11 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         simulator: Optional[str] = None
         test_controls: Optional[str] = None
         pass_seconds: Optional[str] = None
+        bank_enabled: Optional[str] = None
+        bank_size: Optional[str] = None
+        late_grace: Optional[str] = None
+        late_warnings: Optional[str] = None
+        late_debit: Optional[str] = None
         identify: Optional[str] = None
         scan_strict: Optional[str] = None
         call_timeout: Optional[str] = None
@@ -456,6 +477,99 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         return _csv_response("desoto-student-data.csv",
                              ["Period", "Name", "Student ID", "Trips", "Total minutes", "Average minutes",
                               "Longest minutes", "Over-time trips", "Minutes over", "Last trip"], rows)
+
+    # pass bank
+    def need_bank():
+        if state.bank is None:
+            raise HTTPException(501, "The pass bank needs the trip log")
+        return state.bank
+
+    def known(period: str, name: str):
+        if name not in state.roster.get(period, []):
+            raise HTTPException(404, "No such student")
+        return state.ids.get((period, name), "")
+
+    class BankWho(BaseModel):
+        period: str
+        name: str
+
+    class BankAdjust(BankWho):
+        delta: int
+        note: str = ""
+
+    class BankHold(BankWho):
+        hold: bool
+        note: str = ""
+
+    class PeriodBody(BaseModel):
+        name: str
+        start: str
+        end: str
+
+    def today():
+        return datetime.fromtimestamp(state.clock()).date()
+
+    @admin.get("/bank")
+    def get_bank():
+        bank = need_bank()
+        cur, d = bank.current_period(today()), today().isoformat()
+        periods = [dict(p, status="current" if cur and cur["id"] == p["id"] else "past" if p["end"] < d else "future")
+                   for p in bank.periods()]
+        keys = ("bank_enabled", "bank_size", "late_grace", "late_warnings", "late_debit")
+        return {"enabled": state.bank_on, "settings": {k: state.settings[k] for k in keys}, "periods": periods, "today": d,
+                "students": bank.students(state.roster_full(), int(state.settings["bank_size"]))}
+
+    @admin.post("/bank/adjust")
+    async def bank_adjust(body: BankAdjust):
+        bank, sid = need_bank(), known(body.period, body.name)
+        if not -99 <= body.delta <= 99:
+            raise HTTPException(422, "Change must be between -99 and 99")
+        r = bank.adjust(body.period, body.name, sid, body.delta, "adjust", state.clock(),
+                        int(state.settings["bank_size"]), body.note[:200])
+        return r
+
+    @admin.post("/bank/hold")
+    async def bank_hold(body: BankHold):
+        bank, sid = need_bank(), known(body.period, body.name)
+        bank.set_hold(body.period, body.name, sid, body.hold, body.note[:200], state.clock(), int(state.settings["bank_size"]))
+        if body.hold:
+            state.leave(body.period, body.name)        # someone on hold does not stay in the line
+            await broadcast()
+        return {"ok": True}
+
+    @admin.post("/bank/refill")
+    async def bank_refill():
+        need_bank()
+        return {"students": state.refill_banks("Manual refill")}
+
+    @admin.post("/bank/periods")
+    def bank_add_period(body: PeriodBody):
+        bank = need_bank()
+        try:
+            pid = bank.add_period(body.name, body.start, body.end)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        if (bank.current_period(today()) or {}).get("id") == pid:
+            bank.set_meta("applied_period", str(pid))   # already in effect: don't refill mid-term, only when the next one starts
+        state.recheck_periods()
+        return {"id": pid}
+
+    @admin.delete("/bank/periods/{period_id}")
+    def bank_remove_period(period_id: int):
+        if not need_bank().remove_period(period_id):
+            raise HTTPException(404, "No such grading period")
+        return {"ok": True}
+
+    @admin.get("/bank/ledger")
+    def bank_ledger(period: str, name: str):
+        return {"rows": need_bank().ledger(period, name, known(period, name))}
+
+    @admin.get("/bank.csv")
+    def bank_csv():
+        rows = need_bank().students(state.roster_full(), int(state.settings["bank_size"]))
+        return _csv_response("desoto-pass-bank.csv", ["Period", "Name", "Student ID", "Passes left", "Late returns", "Status", "Note"],
+                             [[_safe(r["period"]), _safe(r["name"]), _safe(r["id"]), r["remaining"], r["lates"],
+                               "on hold" if r["hold"] else "active", _safe(r["note"])] for r in rows])
 
     app.include_router(admin)
 
