@@ -421,3 +421,30 @@ def test_late_popup_goes_to_the_kiosk_connection_only(env):
     assert late["student"] == "Ava Johnson" and late["seconds"] == 180 and late["debited"] == 0 and late["n"] == 1
     assert d["late_notice"] is None and c.get("/api/state").json()["late_notice"] is None
     assert "1234567" not in json.dumps(k)
+
+
+def test_red_switch_end_to_end(env):
+    c, state, p = env()
+    assert c.get("/api/state").json()["settings"]["passes_suspended"] == "off"
+    assert c.put("/api/admin/settings", json={"passes_suspended": "on"}).status_code == 200
+    assert c.put("/api/admin/settings", json={"passes_suspended": "yes"}).status_code == 422
+    assert json.loads(p["settings_path"].read_text())["passes_suspended"] == "on"       # survives a restart
+    c2 = TestClient(create_app(PassState({}), **p))
+    assert c2.get("/api/state").json()["settings"]["passes_suspended"] == "on"
+    r = c.post("/api/queue", json={"period": "1", "student": "Ava Johnson"})              # tap mode
+    assert r.status_code == 409 and r.json()["reason"] == "suspended"
+    assert r.json()["message"] == "All passes have been suspended. Please see your teacher."
+    assert state.queue == []
+    c.put("/api/admin/settings", json={"identify": "scan"})
+    for sid in ("1234567", "0000000"):
+        m = c.post("/api/scan", json={"id": sid}).json()
+        assert m["result"] == "suspended" and m["message"] == "All passes have been suspended. Please see your teacher."
+        assert sid not in json.dumps(m)
+    c.put("/api/admin/settings", json={"passes_suspended": "off"})
+    assert c.post("/api/scan", json={"id": "1234567"}).json()["result"] == "started"
+
+
+def test_red_switch_needs_the_pin(env):
+    c, _, _ = env("1234")
+    assert c.put("/api/admin/settings", json={"passes_suspended": "on"}).status_code == 401
+    assert c.put("/api/admin/settings", json={"passes_suspended": "on"}, headers={"X-Admin-Pin": "1234"}).status_code == 200

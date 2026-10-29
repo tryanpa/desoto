@@ -35,7 +35,7 @@ the PIN-protected admin endpoints return them. In the admin pages IDs are masked
 
 ## Admin
 
-- **Live**: what the kiosk shows now: pass status, the queue, **Clear queue**, remove one student,
+- **Live**: the red **Suspend all passes** switch (see below), and what the kiosk shows now: pass status, the queue, **Clear queue**, remove one student,
   and **Mark returned** if the sensor missed a return.
 - **Roster**: import from CSV, add or remove a student. The roster is stored as JSON.
 - **Pass Bank**: pass limits, late penalties, holds and grading periods (off until you turn it on).
@@ -108,6 +108,19 @@ set **Simulator and test controls** to **Show**: the kiosk footer then has a box
 What scanning does and doesn't prove: it shows someone has the card, not that they are the student. Cards can be lent or a
 barcode photographed, so it is better than tapping a name, not perfect. A student listed in more than one period is
 treated as the first period listed.
+
+## Suspend all passes (the red switch)
+
+Admin **Live** tab, at the top: **Suspend all passes** turns passes off for everyone until you press **Resume passes**. It is saved,
+so it survives a restart. While it is on:
+
+- Every scan or tap gets a red message: *"All passes have been suspended. Please see your teacher."* A scan of an unrecognised ID gets the
+  same answer, so it can't be used to test IDs. The kiosk also shows a red strip, and the hallway display shows "Passes suspended".
+- A student who is **already out can still return** (scan back in, or return the pass) so their trip can end.
+- The line is **frozen**: nobody is skipped while suspended, and when you resume the next student gets a fresh time to scan.
+- **Add a student by name → Start trip now** still works, so you can always override.
+- In tap mode with the physical pass, Desoto can stop students joining the line but cannot physically lock the pass.
+- It works whether or not the pass bank is on, and it needs the admin PIN like all admin changes.
 
 ## Pass bank (pass limits, late penalties, holds)
 

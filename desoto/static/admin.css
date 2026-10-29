@@ -92,3 +92,11 @@ table.t{width:100%;border-collapse:collapse}
 .sensor-status.none{color:var(--muted);text-transform:none;font-weight:700}
 
 .dim{opacity:.5}
+
+/* the red switch on the Live tab */
+.kill{display:flex;align-items:center;gap:20px;flex-wrap:wrap;background:var(--panel);border:1px solid #5c2b27;border-radius:14px;padding:16px 22px;margin-bottom:22px}
+.kill .kt{font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#ff8a7a}
+.kill.on{background:var(--red-bg);border:2px solid var(--over)}
+.kill.on .kt{font-size:1.25rem;color:#fff}
+.btn.stop{background:var(--over);border-color:var(--over);color:#fff;padding:16px 26px;font-size:.85rem}
+.btn.stop:hover:not(:disabled){border-color:#fff}

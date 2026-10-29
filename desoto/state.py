@@ -21,6 +21,7 @@ CHOICES = {
     "call_timeout": ("0", "30", "60", "120", "300"),   # seconds a called student has to scan; 0 = never skip
     "max_trip_minutes": ("10", "15", "30", "60"),      # a trip with no return scan is closed after this long
     "bank_enabled": ON_OFF,                       # pass bank: limits, late penalties and holds
+    "passes_suspended": ON_OFF,                   # the red switch: nobody can take a pass until it is switched off
 }
 # Numeric settings: (lowest, highest) whole number
 RANGES = {"bank_size": (1, 99),       # passes each student gets when banks refill
@@ -29,7 +30,7 @@ RANGES = {"bank_size": (1, 99),       # passes each student gets when banks refi
           "late_debit": (0, 10)}      # passes taken for each late return after the warnings
 DEFAULTS = {"bar_style": "thick", "simulator": "on", "test_controls": "show", "identify": "tap", "scan_strict": "on",
             "call_timeout": "60", "max_trip_minutes": "30",
-            "bank_enabled": "off", "bank_size": "8", "late_grace": "30", "late_warnings": "1", "late_debit": "1"}
+            "bank_enabled": "off", "passes_suspended": "off", "bank_size": "8", "late_grace": "30", "late_warnings": "1", "late_debit": "1"}
 MAX_UNKNOWN_SCANS = 20     # unrecognised scans per minute before scanning pauses (stops ID guessing)
 
 # A student is identified by (class period, name): names can repeat across periods.
@@ -131,6 +132,10 @@ class PassState:
         return self.settings.get("simulator") == "on"
 
     @property
+    def suspended(self) -> bool:
+        return self.settings.get("passes_suspended") == "on"
+
+    @property
     def scan_mode(self) -> bool:
         return self.settings.get("identify") == "scan"
 
@@ -185,6 +190,8 @@ class PassState:
 
     def blocked_reason(self, who: Student) -> Optional[str]:
         """"paused" (privilege on hold) or "no_passes" (bank empty); None if the student may take a pass or the bank is off."""
+        if self.suspended:
+            return "suspended"
         if not self.bank_on or not who[0]:
             return None
         row = self.bank_row(who)
@@ -290,6 +297,8 @@ class PassState:
             return {"result": "rate_limited"}
         who = self.find_student(scanned)
         if who is None:
+            if self.suspended:                       # the same answer for every code: it doesn't reveal which IDs are real
+                return {"result": "suspended"}
             self._fails.append(now)
             return {"result": "not_found"}
         res = {"student": who[1], "period": who[0]}
@@ -346,6 +355,8 @@ class PassState:
         if self.out is None and self.queue:
             if self.called_at is None:
                 self.called_at, changed = now, True
+            elif self.suspended:
+                self.called_at = now                 # the line is frozen; the next student gets a fresh window on resume
             elif timeout and now - self.called_at >= timeout:
                 skipped = self.queue.pop(0)
                 self.queue_method.pop(skipped, None)
@@ -371,7 +382,7 @@ class PassState:
         person = lambda s: {"period": s[0], "student": s[1]}
         timeout = int(self.settings["call_timeout"])
         called = None
-        if self.scan_mode and self.out is None and self.queue and self.called_at is not None:
+        if self.scan_mode and not self.suspended and self.out is None and self.queue and self.called_at is not None:
             called = dict(person(self.queue[0]), expires_at=(self.called_at + timeout) if timeout else None, window=timeout)
         return {
             "now": self.clock(),

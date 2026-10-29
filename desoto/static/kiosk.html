@@ -30,6 +30,7 @@
  #scanMsg.bad{background:var(--red-bg);color:#ff8a7a;border-color:#5c2b27}
  #scanNext{color:var(--ink2,#b8b8b8);font-weight:700;font-size:1.15rem;min-height:1.5em}
  #scanTest{display:flex;align-items:center;gap:10px}#scanTest input{width:150px;padding:8px 10px}
+ #susp{flex:none;text-align:center;background:var(--red-bg);border:2px solid var(--over,#e0533f);color:#ff8a7a;border-radius:12px;padding:12px 16px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;font-size:1.05rem}
  /* Popup: late return / blocked (only ever shown on the kiosk) */
  #popup{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.74);display:flex;align-items:center;justify-content:center;padding:24px}
  .pcard{width:min(760px,100%);background:var(--panel);border:3px solid var(--amber);border-radius:22px;padding:34px 40px;text-align:center}
@@ -44,6 +45,7 @@
  <div class="pcard warn" id="pcard"><div class="ptitle" id="ptitle"></div><div class="pbody" id="pbody"></div></div>
 </div>
 <main>
+ <div id="susp" hidden>All passes have been suspended. Please see your teacher.</div>
  <div id="tapview">
   <div class="head"><button class="ghost" id="back" hidden onclick="show(null)">← Periods</button><h1 id="h1"></h1></div>
   <div id="main"></div>
@@ -159,6 +161,7 @@ let flash = "", flashTimer = null;
 function say(msg) { flash = msg; clearTimeout(flashTimer); flashTimer = setTimeout(() => flash = "", 4000); }
 function join(p, n) {
   post("/api/queue", {period: p, student: n}).then(r => r.json().then(st => {
+    if (r.status === 409 && st.reason === "suspended") { showPopup("block", "All passes have been suspended", "Please see your teacher."); show(null); return; }
     if (r.status === 409 && st.reason) { showPopup("block", n, st.message.replace(n + ", ", "").replace(/^./, c => c.toUpperCase())); show(null); return; }
     say(`${n} added — #${st.queue.findIndex(q => same(p, n, q)) + 1} in line`); show(null); }));
 }
@@ -224,6 +227,7 @@ function render() {
 if (location.hash.length > 1) show(decodeURIComponent(location.hash.slice(1)));  // e.g. /#3 opens period 3
 connect((s, left) => {
   S = s; leftNow = left; setPill(s); lateNotice(s.late_notice);
+  $("susp").hidden = s.settings.passes_suspended !== "on";
   const controls = s.settings.test_controls === "show";   // Settings -> Simulator and test controls
   $("sim").hidden = !(controls && s.settings.simulator === "on" && !scanMode());   // Take pass / Return pass (tap mode)
   $("scanTest").hidden = !(controls && scanMode());                                // type-an-ID box (scan mode)

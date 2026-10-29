@@ -6,6 +6,7 @@
  .layout{flex:1;display:grid;grid-template-columns:1fr clamp(300px,28vw,440px);min-height:0}
  main{gap:36px;text-align:center}
  .label.big{font-size:clamp(1.3rem,2.8vw,2.4rem);color:#8a8a8a;letter-spacing:.3em}
+ .label.big.red{color:var(--over,#e0533f)}
  .label.mid{font-size:clamp(.95rem,1.7vw,1.4rem);min-height:1.4em;color:#777}
  .who{font-weight:900;font-size:clamp(2.6rem,7vw,6rem);margin-top:8px}
  .count{font-family:var(--mono);font-weight:700;font-size:clamp(6rem,20vw,16rem);line-height:1;letter-spacing:.04em}
@@ -73,6 +74,12 @@ connect((s, left) => {
     $("bar").classList.toggle("over", left < 0); $("pt").textContent = fmt(left);
     $("fill").style.background = left < 0 ? "var(--red)" : left < warnAt(s.duration) ? "var(--amber)" : "var(--green)";
     $("status").textContent = left < 0 ? `Over time — ${s.out.student}` : `${s.out.student} is out`;
+  } else if (s.settings.passes_suspended === "on") {
+    // The red switch is on: nobody can take a pass.
+    $("oLabel").textContent = "Passes suspended"; $("out").textContent = "See your teacher"; $("oSub").textContent = "";
+    $("count").textContent = "✕"; $("count").className = "count red";
+    $("fill").style.width = "100%"; $("fill").style.background = "var(--red)";
+    $("bar").classList.remove("over"); $("pt").textContent = "✕";
   } else if (s.called) {
     // Scan mode: the pass is free and this student has been called. They scan their ID to start.
     const c = s.called, rem = c.expires_at ? Math.max(0, c.expires_at - (Date.now() / 1000 + (window.srvOffset || 0))) : null;
@@ -88,6 +95,9 @@ connect((s, left) => {
     $("bar").classList.remove("over"); $("pt").textContent = "✓";
     $("status").textContent = "Waiting — pass available";
   }
+  const susp = s.settings.passes_suspended === "on";
+  $("oLabel").classList.toggle("red", susp && !s.out);
+  if (susp) $("status").textContent = "All passes have been suspended";
   if (s.notice) $("status").textContent = s.notice;
 });
 </script>

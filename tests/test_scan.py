@@ -179,3 +179,48 @@ def test_pass_length_validation():
         assert not s.set_setting("pass_seconds", bad), bad
     assert s.set_setting("pass_seconds", "60") and s.set_setting("pass_seconds", "3600") and s.set_setting("pass_seconds", "450")
     assert s.duration == 450
+
+
+# ------------------------------------------------------------- the red switch
+def test_suspended_blocks_every_scan_but_lets_the_student_out_return():
+    s, t = make()
+    s.scan("1001"); s.scan("1002")                       # Ava out, Ben queued
+    assert s.set_setting("passes_suspended", "on") and not s.set_setting("passes_suspended", "maybe")
+    assert s.scan("1003") == {"student": "Cy", "period": "1", "result": "suspended"} and s.queue == [("1", "Ben")]
+    assert s.scan("9999") == {"result": "suspended"}     # unknown code: the same answer, no hint whether the ID is real
+    assert s._fails == []                                # and it does not count toward the guessing limit
+    assert s.scan("1002")["result"] == "suspended"       # a queued student can't use the free pass either (it is busy anyway)
+    t[0] += 60
+    r = s.scan("1001")                                   # Ava is out: she can still scan back so the trip can end
+    assert r["result"] == "returned" and s.out is None
+
+
+def test_suspended_blocks_tap_mode_and_even_when_the_bank_is_off():
+    s, t = make(scan=False)
+    assert s.blocked_reason(("1", "Ava")) is None
+    s.set_setting("passes_suspended", "on")
+    assert s.blocked_reason(("1", "Ava")) == "suspended" and s.settings["bank_enabled"] == "off"
+    s.set_setting("passes_suspended", "off")
+    assert s.blocked_reason(("1", "Ava")) is None
+
+
+def test_suspending_freezes_the_line_and_resuming_gives_a_fresh_window():
+    s, t = make()
+    s.scan("1001"); s.scan("1002"); s.scan("1003")
+    t[0] += 30; s.scan("1001")                           # Ava back: Ben is called (60 s to scan)
+    assert s.snapshot()["called"]["student"] == "Ben"
+    s.set_setting("passes_suspended", "on")
+    assert s.snapshot()["called"] is None                # the display must not say "Your turn" while suspended
+    t[0] += 600; s.tick()                                # ten minutes pass: nobody is skipped
+    assert s.queue == [("1", "Ben"), ("1", "Cy")] and s.notice is None
+    s.set_setting("passes_suspended", "off")
+    t[0] += 1; s.tick()
+    assert s.snapshot()["called"]["student"] == "Ben"    # the line carries on where it stopped
+    t[0] += 57; s.tick(); assert s.queue[0] == ("1", "Ben")        # still inside a fresh 60 seconds (not the old clock)
+    t[0] += 3; assert s.tick() is True and s.queue == [("1", "Cy")]   # now they really were too slow
+
+
+def test_teacher_override_still_works_while_suspended():
+    s, _ = make()
+    s.set_setting("passes_suspended", "on")
+    assert s.start_now("1", "Ava") and s.out.method == "teacher"

@@ -47,9 +47,12 @@ def _csv_response(name: str, header, rows) -> Response:
 
 
 BLOCKED = {"paused": "your pass privilege is on hold", "no_passes": "you have no passes left"}
+SUSPENDED_MESSAGE = "All passes have been suspended. Please see your teacher."
 
 
 def block_message(name: str, reason: str) -> str:
+    if reason == "suspended":
+        return SUSPENDED_MESSAGE
     return f"{name}, {BLOCKED[reason]}. Please see your teacher."
 
 
@@ -64,7 +67,7 @@ def scan_message(r: dict) -> str:
     if code == "returned":
         s = r["seconds"]
         return f"Welcome back, {name}. Trip time {s // 60}:{s % 60:02d}" + (" (over time)." if r["over"] else ".")
-    if code in BLOCKED:
+    if code in BLOCKED or code == "suspended":
         return block_message(name, code)
     if code == "queued":
         return f"{name}: you are #{r['position']} in line."
@@ -250,6 +253,7 @@ def create_app(state: Optional[PassState] = None, settings_path: Optional[Path] 
         test_controls: Optional[str] = None
         pass_seconds: Optional[str] = None
         bank_enabled: Optional[str] = None
+        passes_suspended: Optional[str] = None
         bank_size: Optional[str] = None
         late_grace: Optional[str] = None
         late_warnings: Optional[str] = None

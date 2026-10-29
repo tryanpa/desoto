@@ -170,7 +170,26 @@ views.live = async alive => {
   const addCard = card("Add a student by name", addMsg);
   addCard.append(h("div", {class: "body"}, h("div", {class: "help", style: "margin-bottom:12px"}, "For a forgotten or lost ID card. These trips are logged as added by a teacher."),
     h("div", {class: "row"}, pSel, nSel, btn("Add to queue", () => doAdd(false), "primary"), startBtn)));
+  // The red switch: no passes for anyone until it is switched off. Saved, so it survives a restart.
+  const suspCard = h("div"), suspSet = async v => {
+    try { await api("/api/admin/settings", {method: "PUT", body: {passes_suspended: v}}); } catch (e) { alert(errText(e)); }
+  };
+  let suspKey = null;
+  const drawSusp = s => {
+    const on = s.settings.passes_suspended === "on";
+    if (on === suspKey) return;
+    suspKey = on;
+    suspCard.className = "kill" + (on ? " on" : "");
+    suspCard.replaceChildren(...(on ? [
+      h("div", {class: "kt"}, "All passes are suspended"),
+      h("div", {class: "help grow", style: "color:#ffb3a8"}, "Every scan or tap gets \"All passes have been suspended. Please see your teacher.\" The line is paused."),
+      btn("Resume passes", () => suspSet("off"), "primary")] : [
+      h("div", {class: "kt"}, "Emergency stop"),
+      h("div", {class: "help grow"}, "Turns passes off for everyone until you turn them back on. A student who is already out can still return."),
+      btn("Suspend all passes", () => suspSet("on"), "stop")]));
+  };
   view.append(h("h2", null, "Live"), h("div", {class: "lead"}, "What the kiosk and hallway display are showing right now"),
+    suspCard,
     h("div", {class: "tiles"}, tWait.el, tOut.el, tOver.el, tToday.el),
     card("Currently out").appendChild(outBody).parentNode,
     card("Queue", msg, clearBtn).appendChild(queueBody).parentNode, addCard);
@@ -182,6 +201,7 @@ views.live = async alive => {
     } catch (e) { /* tile stays as is */ }
   }
   current.onState = (s, left) => {
+    drawSusp(s);
     tWait.set(String(s.queue.length), s.queue.length ? `Next: ${s.queue[0].student}` : "Queue is empty");
     tOut.set(s.out ? mmss(left) : "—", s.out ? s.out.student : "Pass available", s.out && left < 0 ? "red" : "");
     tOver.set(s.out && left < 0 ? "+" + mmss(-left) : "—", "", s.out && left < 0 ? "red" : "");
